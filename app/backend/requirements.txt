@@ -1,0 +1,4 @@
+# Содержимое файла: app/backend/requirements.txt
+fastapi
+uvicorn
+cassandra-driver
