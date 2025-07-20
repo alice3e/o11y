@@ -1,54 +1,50 @@
-# Содержимое файла: app/backend/src/__main__.py
-import os
+# Файл: app/backend/src/__main__.py
+
 import uvicorn
-from fastapi import FastAPI, Response, status
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
 
-# ИСПРАВЛЕННЫЙ ИМПОРТ
-from cassandra.cluster import Cluster, NoHostAvailable
-from cassandra.auth import PlainTextAuthProvider
+# ИЗМЕНЕННЫЙ ИМПОРТ: Импортируем роутеры из __init__.py пакета api
+from .api import system_router, products_router
 
-# --- Настройки ---
-CASSANDRA_HOST = os.getenv("CASSANDRA_HOST", "cassandra")
-CASSANDRA_PORT = int(os.getenv("CASSANDRA_PORT", 9042))
+# Импортируем сервис для работы с БД
+from .services import cassandra
 
 
-# --- Создание экземпляра приложения ---
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ... (эта часть без изменений)
+    print("Application startup: Connecting to database...")
+    app.state.cassandra_session = cassandra.init_cassandra()
+    print("Application startup: Database ready.")
+    yield
+    print("Application shutdown: Closing database connection...")
+    app.state.cassandra_session.shutdown()
+    print("Application shutdown: Complete.")
+
+
+# Создаем основной экземпляр приложения
 app = FastAPI(
-    title="Product Store",
-    description="Система для домашнего задания по o11y",
+    title="Product Store API",
+    description="Бэкенд-сервис для ДЗ по Observability",
     version="0.1.0",
+    docs_url="/swagger",
+    redoc_url=None,
+    openapi_url="/openapi.json",
+    root_path="/api",
+    lifespan=lifespan
 )
 
+# --- Подключение роутеров ---
+# ИСПОЛЬЗУЕМ НОВЫЕ ИМЕНА
+app.include_router(system_router)
+app.include_router(products_router)
 
-# --- API Эндпоинты ---
+# --- Корневой эндпоинт API ---
 @app.get("/")
-async def root():
-    """Простой эндпоинт для проверки, что сервис жив."""
-    return {"message": "Product Store Service is running"}
-
-
-@app.get("/health", summary="Проверка состояния сервиса и подключения к БД")
-def health_check(response: Response):
-    """
-    Проверяет доступность Cassandra.
-    Возвращает 200 OK, если все хорошо.
-    Возвращает 503 Service Unavailable, если БД недоступна.
-    """
-    try:
-        # Пытаемся установить соединение с Cassandra
-        cluster = Cluster([CASSANDRA_HOST], port=CASSANDRA_PORT)
-        session = cluster.connect()
-        session.execute("SELECT release_version FROM system.local")
-        session.shutdown()
-        cluster.shutdown()
-        return {"status": "ok", "database_connection": "ok"}
-    except NoHostAvailable:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"status": "error", "database_connection": "unavailable"}
-    except Exception as e:
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return {"status": "error", "database_connection": f"error: {e}"}
-
+def api_root():
+    """Корневой эндпоинт API, доступный по /api/"""
+    return {"message": "Welcome to the Product Store API"}
 
 # --- Точка входа для запуска через uvicorn ---
 if __name__ == "__main__":

@@ -1,32 +1,38 @@
-version: '3.8'
-
 services:
-  # Nginx - наша единая точка входа
   nginx:
     build:
-      context: ./nginx # Путь к Dockerfile для Nginx
+      context: ..
+      dockerfile: app/nginx/Dockerfile
     ports:
-      - "80:80" # Публикуем только порт 80
+      - "80:80"
     networks:
       - product-store-net
     depends_on:
       - backend
+      - docs
 
-  # Наше FastAPI приложение
   backend:
     build:
-      context: ../app/backend
+      context: ..
+      dockerfile: app/backend/Dockerfile
     environment:
       - CASSANDRA_HOST=cassandra
     volumes:
+      # Пути в volumes относительны YAML-файла, поэтому ../ выходит в корень
       - ../app/backend/src:/app/src
     networks:
       - product-store-net
     depends_on:
       cassandra:
-        condition: service_healthy # Запускаем backend только после того, как Cassandra будет готова
+        condition: service_healthy
 
-  # База данных Apache Cassandra
+  docs:
+    build:
+      context: ..
+      dockerfile: app/docs/Dockerfile
+    networks:
+      - product-store-net
+
   cassandra:
     image: cassandra:4.1
     networks:
@@ -39,12 +45,10 @@ services:
       timeout: 10s
       retries: 10
 
-# Именованный volume для данных Cassandra
 volumes:
   cassandra-data:
     driver: local
 
-# Общая сеть для наших сервисов
 networks:
   product-store-net:
     driver: bridge
