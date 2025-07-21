@@ -1,27 +1,45 @@
 # Файл: infra/mkdocs.yml
 
-site_name: Product Store - O11y Project
-site_description: "Документация для проекта-магазина по теме Observability"
+site_name: Product Store
+site_url: http://localhost/docs/
+site_description: Документация для проекта Product Store
+site_author: KIT Student
 
+# Навигация
+nav:
+  - Главная: index.md
+  - Архитектура: architecture.md
+  - API: api_docs.md
+  - План работ: future_plans.md
+  - Воспроизведение алертов: reproduce_alerts.md
+
+# Тема
 theme:
   name: material
   language: ru
   features:
-    - navigation.tabs
+    - navigation.instant
+    - navigation.tracking
+    - navigation.expand
+    - navigation.indexes
     - content.code.annotate
+  palette:
+    primary: blue
+    accent: blue
 
-# Улучшенная навигация
-nav:
-  - 'Введение': 'index.md'
-  - 'Архитектура': 'architecture.md'
-  - 'Справочник API': 'api_docs.md'
-  - 'Инструкции':
-    - 'Воспроизведение алертов': 'reproduce_alerts.md'
-
-# Включаем поддержку диаграмм Mermaid
+# Расширения Markdown
 markdown_extensions:
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - admonition
+  - footnotes
+  - toc:
+      permalink: true
+
+# Плагины
+plugins:
+  - search
+  - minify:
+      minify_html: true

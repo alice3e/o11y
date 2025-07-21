@@ -10,6 +10,9 @@ services:
     depends_on:
       - backend
       - docs
+      - cart-service
+      - order-service
+      - user-service
 
   backend:
     build:
@@ -25,6 +28,48 @@ services:
     depends_on:
       cassandra:
         condition: service_healthy
+
+  cart-service:
+    build:
+      context: ..
+      dockerfile: app/cart-service/Dockerfile
+    environment:
+      - BACKEND_HOST=backend
+      - ORDER_SERVICE_HOST=order-service
+    volumes:
+      - ../app/cart-service/src:/app/src
+    networks:
+      - product-store-net
+    depends_on:
+      - backend
+
+  order-service:
+    build:
+      context: ..
+      dockerfile: app/order-service/Dockerfile
+    environment:
+      - BACKEND_HOST=backend
+    volumes:
+      - ../app/order-service/src:/app/src
+    networks:
+      - product-store-net
+    depends_on:
+      - backend
+
+  user-service:
+    build:
+      context: ..
+      dockerfile: app/user-service/Dockerfile
+    environment:
+      - CART_SERVICE_HOST=cart-service
+      - ORDER_SERVICE_HOST=order-service
+    volumes:
+      - ../app/user-service/src:/app/src
+    networks:
+      - product-store-net
+    depends_on:
+      - cart-service
+      - order-service
 
   docs:
     build:
