@@ -1,4 +1,4 @@
-version: '3'
+version: '3.8'
 
 services:
   # База данных Cassandra
@@ -28,6 +28,11 @@ services:
         condition: service_healthy
     environment:
       - CASSANDRA_HOST=cassandra
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - product-store-net
 
@@ -38,10 +43,16 @@ services:
       dockerfile: app/cart-service/Dockerfile
     container_name: infra-cart-service
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - product-store-net
 
@@ -52,10 +63,16 @@ services:
       dockerfile: app/order-service/Dockerfile
     container_name: infra-order-service
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - product-store-net
 
@@ -66,22 +83,48 @@ services:
       dockerfile: app/user-service/Dockerfile
     container_name: infra-user-service
     depends_on:
-      - backend
-      - cart-service
-      - order-service
+      backend:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
     environment:
       - CART_SERVICE_URL=http://cart-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - product-store-net
 
-  # Документация
+  # Документация (mkdocs)
   docs:
     build:
       context: ..
       dockerfile: app/docs/Dockerfile
     container_name: infra-docs
+    networks:
+      - product-store-net
+
+  # Swagger UI
+  swagger-ui:
+    build:
+      context: ..
+      dockerfile: app/swagger-ui/Dockerfile
+    container_name: infra-swagger-ui
+    depends_on:
+      backend:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
     networks:
       - product-store-net
 
@@ -94,11 +137,18 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
-      - cart-service
-      - order-service
-      - user-service
-      - docs
+      backend:
+        condition: service_healthy
+      cart-service:
+        condition: service_healthy
+      order-service:
+        condition: service_healthy
+      user-service:
+        condition: service_healthy
+      docs:
+        condition: service_started
+      swagger-ui:
+        condition: service_started
     networks:
       - product-store-net
 

@@ -13,9 +13,6 @@ COPY app/docs/mkdocs.yml .
 # Build the documentation
 RUN mkdocs build
 
-# Copy swagger.html to the site root
-COPY app/docs-src/swagger.html /app/site/swagger.html
-
 # Final stage
 FROM nginx:1.21-alpine
 

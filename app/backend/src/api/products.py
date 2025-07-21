@@ -163,20 +163,25 @@ def delete_product(product_id: UUID, session=Depends(get_cassandra_session)):
 @router.get("/categories/list", response_model=List[CategoryOut])
 def list_categories(session=Depends(get_cassandra_session)):
     """Получение списка доступных категорий и количества товаров в каждой."""
-    # This query will get all unique categories
-    categories_query = "SELECT DISTINCT category FROM products"
+    # Get all products' categories
+    categories_query = "SELECT category FROM products ALLOW FILTERING"
     categories_rows = session.execute(categories_query)
     
+    # Use a dictionary to track unique categories and counts
+    category_counts = {}
+    for row in categories_rows:
+        category = row.category
+        if category in category_counts:
+            category_counts[category] += 1
+        else:
+            category_counts[category] = 1
+    
+    # Convert to result format
     result = []
-    for category_row in categories_rows:
-        category = category_row.category
-        # Count products in this category
-        count_query = "SELECT COUNT(*) as count FROM products WHERE category = %s ALLOW FILTERING"
-        count_row = session.execute(count_query, [category]).one()
-        
+    for category, count in category_counts.items():
         result.append(CategoryOut(
             name=category,
-            product_count=count_row.count
+            product_count=count
         ))
     
     return result

@@ -35,6 +35,14 @@ def get_cassandra_session():
 
 def create_schema(session):
     """Создание таблиц в Cassandra."""
+    # Drop the existing table to recreate with new schema
+    try:
+        log.info("Dropping table 'products' if exists...")
+        session.execute("DROP TABLE IF EXISTS products")
+        log.info("Table 'products' dropped.")
+    except Exception as e:
+        log.warning(f"Error dropping table: {e}")
+    
     log.info("Creating table 'products'...")
     session.execute("""
         CREATE TABLE IF NOT EXISTS products (
@@ -42,7 +50,9 @@ def create_schema(session):
             name TEXT,
             category TEXT,
             price DECIMAL,
-            quantity INT
+            quantity INT,
+            description TEXT,
+            manufacturer TEXT
         );
     """)
     log.info("Table 'products' created.")

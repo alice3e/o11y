@@ -128,7 +128,7 @@ main() {
     # 6. Добавление товара
     print_header "Добавление товара в базу данных"
     
-    local product_data="{\"name\":\"Тестовый товар\",\"category\":\"Тесты\",\"price\":100.50,\"quantity\":50}"
+    local product_data="{\"name\":\"Тестовый товар\",\"category\":\"Тесты\",\"price\":100.50,\"stock_count\":50}"
     local product_response=$(curl -s -X POST "${BASE_URL}/api/products/" \
         -H "Content-Type: application/json" \
         -d "$product_data")
@@ -288,10 +288,10 @@ main() {
     
     # Создаем массив товаров с разными ценами
     local products=(
-        "{\"name\":\"Молоко 'Простоквашино'\",\"category\":\"Молочные продукты\",\"price\":89.90,\"quantity\":30}"
-        "{\"name\":\"Творог 'Домик в деревне'\",\"category\":\"Молочные продукты\",\"price\":129.50,\"quantity\":20}"
-        "{\"name\":\"Сыр 'Российский'\",\"category\":\"Молочные продукты\",\"price\":349.99,\"quantity\":15}"
-        "{\"name\":\"Йогурт 'Активия'\",\"category\":\"Молочные продукты\",\"price\":59.90,\"quantity\":40}"
+        "{\"name\":\"Молоко 'Простоквашино'\",\"category\":\"Молочные продукты\",\"price\":89.90,\"stock_count\":30}"
+        "{\"name\":\"Творог 'Домик в деревне'\",\"category\":\"Молочные продукты\",\"price\":129.50,\"stock_count\":20}"
+        "{\"name\":\"Сыр 'Российский'\",\"category\":\"Молочные продукты\",\"price\":349.99,\"stock_count\":15}"
+        "{\"name\":\"Йогурт 'Активия'\",\"category\":\"Молочные продукты\",\"price\":59.90,\"stock_count\":40}"
     )
     
     for product_data in "${products[@]}"; do
