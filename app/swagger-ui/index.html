@@ -3,15 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <title>Unified API Documentation</title>
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4/swagger-ui.css">
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@4.18.3/swagger-ui.css">
     <style>
         html, body {
             height: 100%;
             margin: 0;
             padding: 0;
         }
+        body {
+            background-color: #fafafa;
+        }
         #swagger-ui {
-            height: 100%;
+            height: calc(100% - 80px);
+            margin-top: 10px;
         }
         .topbar {
             background-color: #2C3E50 !important;
@@ -88,7 +92,8 @@
         Default users: swagger_admin (password: admin123) and swagger_user (password: password123)
     </div>
     <div id="swagger-ui"></div>
-    <script src="https://unpkg.com/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@4.18.3/swagger-ui-bundle.js"></script>
+    <script src="https://unpkg.com/swagger-ui-dist@4.18.3/swagger-ui-standalone-preset.js"></script>
     <script>
         window.onload = function() {
             const ui = SwaggerUIBundle({
@@ -97,18 +102,19 @@
                 deepLinking: true,
                 presets: [
                     SwaggerUIBundle.presets.apis,
-                    SwaggerUIBundle.SwaggerUIStandalonePreset
+                    SwaggerUIStandalonePreset
                 ],
                 plugins: [
                     SwaggerUIBundle.plugins.DownloadUrl
                 ],
-                layout: "StandaloneLayout",
+                layout: "BaseLayout",
                 persistAuthorization: true,
                 docExpansion: "none", // Collapse all by default for cleaner look
                 defaultModelsExpandDepth: 1,
                 filter: true, // Enable filtering
                 tagsSorter: "alpha", // Sort tags alphabetically
                 operationsSorter: "alpha", // Sort operations alphabetically
+                displayRequestDuration: true
             });
             
             // Функция для применения JWT токена к авторизации Swagger UI

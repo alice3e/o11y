@@ -3,6 +3,7 @@ import requests
 import os
 import time
 import logging
+import sys
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -30,9 +31,11 @@ SERVICES = {
 }
 
 # Максимальное количество попыток получения спецификаций
-MAX_RETRIES = 10
+MAX_RETRIES = 30
 # Задержка между попытками в секундах
 RETRY_DELAY = 3
+# Таймаут для запросов
+REQUEST_TIMEOUT = 10
 
 # Путь для сохранения итогового файла
 OUTPUT_FILE = "/usr/share/nginx/html/swagger.json"
@@ -58,27 +61,55 @@ def merge_specs():
                 "bearerAuth": {
                     "type": "http",
                     "scheme": "bearer",
-                    "bearerFormat": "JWT"
+                    "bearerFormat": "JWT",
+                    "description": "JWT токен для аутентификации. Получите через /user-api/token или используйте автоматический вход."
                 },
                 "adminAuth": {
                     "type": "apiKey",
                     "in": "header",
-                    "name": "admin"
+                    "name": "admin",
+                    "description": "Установите значение 'true' для доступа к административным функциям."
                 }
             }
         },
-        "security": []
+        "security": [],
+        "tags": []
     }
+    
+    # Список для отслеживания успешно загруженных сервисов
+    loaded_services = []
     
     # Собираем все спецификации от сервисов
     for service_name, service_info in SERVICES.items():
         retries = 0
-        while retries < MAX_RETRIES:
+        service_loaded = False
+        
+        while retries < MAX_RETRIES and not service_loaded:
             try:
                 logger.info(f"Fetching OpenAPI spec from {service_name} ({service_info['url']})")
-                response = requests.get(service_info["url"], timeout=5)
+                response = requests.get(service_info["url"], timeout=REQUEST_TIMEOUT)
                 response.raise_for_status()
                 spec = response.json()
+                
+                # Добавляем тег для сервиса, если его еще нет
+                service_tag = {
+                    "name": service_name,
+                    "description": f"API эндпоинты сервиса {service_name}"
+                }
+                
+                if "tags" in spec:
+                    # Добавляем существующие теги с префиксом сервиса
+                    for tag in spec.get("tags", []):
+                        tag_name = tag.get("name", "")
+                        if tag_name:
+                            # Добавляем префикс сервиса к тегу, если его еще нет
+                            if not tag_name.startswith(service_name):
+                                tag["name"] = f"{service_name}_{tag_name}"
+                            merged_spec["tags"].append(tag)
+                
+                # Добавляем тег сервиса, если его еще нет
+                if not any(tag.get("name") == service_name for tag in merged_spec.get("tags", [])):
+                    merged_spec["tags"].append(service_tag)
                 
                 # Добавляем информацию о сервисе в общее описание
                 if "info" in spec and "title" in spec["info"]:
@@ -99,6 +130,8 @@ def merge_specs():
                         # Добавляем тег с именем сервиса, если не указано иное
                         if 'tags' not in operation or not operation['tags']:
                             operation['tags'] = [service_name]
+                        elif service_name not in operation['tags']:
+                            operation['tags'].insert(0, service_name)
                         
                         # Добавляем информацию о требованиях авторизации
                         if "security" not in operation:
@@ -119,6 +152,10 @@ def merge_specs():
                                 requires_admin = True
                                 requires_auth = True
                             elif any(auth_term in description for auth_term in ["auth", "token", "login", "authenticated"]):
+                                requires_auth = True
+                            
+                            # Проверка пути на наличие защищенных эндпоинтов
+                            if "/me/" in path or "/users/me" in path or "/orders/" in path or "/cart/" in path:
                                 requires_auth = True
                             
                             # Добавляем схемы безопасности если нужно
@@ -149,7 +186,8 @@ def merge_specs():
                                     merged_spec['components'][comp_type][comp_name] = comp
                 
                 logger.info(f"Successfully fetched spec from {service_name}")
-                break  # Успешно получили спецификацию, выходим из цикла повторных попыток
+                loaded_services.append(service_name)
+                service_loaded = True
                 
             except requests.exceptions.RequestException as e:
                 retries += 1
@@ -158,12 +196,28 @@ def merge_specs():
                     time.sleep(RETRY_DELAY)
                 else:
                     logger.error(f"Failed to fetch spec from {service_name} after {MAX_RETRIES} attempts")
-
+    
+    # Проверяем, что загрузили хотя бы один сервис
+    if not loaded_services:
+        logger.error("Failed to load any service specifications. Exiting.")
+        sys.exit(1)
+    
+    # Логируем информацию о загруженных сервисах
+    logger.info(f"Successfully loaded specifications from: {', '.join(loaded_services)}")
+    
+    # Если не удалось загрузить какие-то сервисы, логируем предупреждение
+    if len(loaded_services) < len(SERVICES):
+        missing_services = set(SERVICES.keys()) - set(loaded_services)
+        logger.warning(f"Failed to load specifications from: {', '.join(missing_services)}")
+    
     # Сохраняем итоговый файл
     with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
         json.dump(merged_spec, f, ensure_ascii=False, indent=2)
         
     logger.info(f"Successfully merged specs into {OUTPUT_FILE}")
+    logger.info(f"Total paths: {len(merged_spec['paths'])}")
+    logger.info(f"Total schemas: {len(merged_spec['components'].get('schemas', {}))}")
+    logger.info(f"Total tags: {len(merged_spec['tags'])}")
 
 if __name__ == "__main__":
     merge_specs() 
