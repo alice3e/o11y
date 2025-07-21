@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Unified API Documentation</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3/swagger-ui.css">
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+        }
+        #swagger-ui {
+            height: 100%;
+        }
+        .topbar {
+            background-color: #f7f7f7;
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        #api-selector, #auth-token {
+            padding: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <select id="api-selector">
+            <option value="http://localhost/api/openapi.json">Backend API</option>
+            <option value="http://localhost/cart-api/openapi.json">Cart Service</option>
+            <option value="http://localhost/order-api/openapi.json">Order Service</option>
+            <option value="http://localhost/user-api/openapi.json">User Service</option>
+        </select>
+        <input type="text" id="auth-token" placeholder="Enter Bearer Token" size="40">
+        <button id="auth-btn">Authorize</button>
+    </div>
+
+    <div id="swagger-ui"></div>
+
+    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const selector = document.getElementById("api-selector");
+            const authTokenInput = document.getElementById("auth-token");
+            const authBtn = document.getElementById("auth-btn");
+
+            let ui;
+
+            function initSwagger(url) {
+                ui = SwaggerUIBundle({
+                    url: url,
+                    dom_id: '#swagger-ui',
+                    deepLinking: true,
+                    presets: [
+                        SwaggerUIBundle.presets.apis,
+                        SwaggerUIBundle.SwaggerUIStandalonePreset
+                    ],
+                    plugins: [
+                        SwaggerUIBundle.plugins.DownloadUrl
+                    ],
+                    layout: "StandaloneLayout"
+                });
+            }
+
+            function updateAuth() {
+                if (ui) {
+                    const token = authTokenInput.value;
+                    const security = {
+                        "BearerAuth": {
+                            "value": token
+                        }
+                    };
+                    ui.authActions.authorize(security);
+                }
+            }
+
+            selector.addEventListener("change", function() {
+                initSwagger(this.value);
+            });
+
+            authBtn.addEventListener("click", function() {
+                updateAuth();
+            });
+
+            // Load the initial API
+            initSwagger(selector.value);
+        });
+    </script>
+</body>
+</html> 

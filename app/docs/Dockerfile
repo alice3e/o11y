@@ -1,31 +1,32 @@
-# Файл: app/docs/Dockerfile
+FROM python:3.9-slim as builder
 
-FROM python:3.11-slim as builder
+# Install dependencies
+RUN pip install mkdocs mkdocs-material
 
-# Установка зависимостей
-RUN pip install mkdocs mkdocs-material mkdocs-minify-plugin
-
-# Настройка рабочей директории
+# Set up the working directory
 WORKDIR /app
 
-# Копирование исходных файлов документации
+# Copy the documentation source files
 COPY app/docs-src ./docs
 COPY app/docs/mkdocs.yml .
 
-# Сборка документации
+# Build the documentation
 RUN mkdocs build
 
-# Финальный образ
-FROM nginx:1.25-alpine
+# Copy swagger.html to the site root
+COPY app/docs-src/swagger.html /app/site/swagger.html
 
-# Копирование собранной документации
+# Final stage
+FROM nginx:1.21-alpine
+
+# Copy the built documentation
 COPY --from=builder /app/site /usr/share/nginx/html
 
-# Настройка Nginx
+# Configure Nginx
 COPY app/docs/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Экспорт порта
-EXPOSE 8000
+# Expose port
+EXPOSE 80
 
-# Запуск Nginx
-CMD ["nginx", "-g", "daemon off;"]
+# Run Nginx
+CMD ["nginx", "-g", "daemon off;"] 

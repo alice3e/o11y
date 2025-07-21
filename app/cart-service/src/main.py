@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from pydantic import BaseModel, UUID4
 import uuid
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 # Настройки
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
@@ -11,6 +12,9 @@ ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:80
 
 # In-memory хранилище корзин
 carts_db: Dict[str, Dict[str, Any]] = {}
+
+# In-memory хранилище недавно просмотренных товаров
+recent_views_db: Dict[str, List[Dict]] = {}
 
 # Модели данных
 class CartItemCreate(BaseModel):
@@ -31,6 +35,30 @@ class CartItem(BaseModel):
 class Cart(BaseModel):
     items: List[CartItem]
     total: float
+
+class Category(BaseModel):
+    name: str
+    product_count: int
+
+class PaginationMetadata(BaseModel):
+    total: int
+    page: int
+    pages: int
+    has_next: bool
+    has_prev: bool
+
+class ProductOut(BaseModel):
+    product_id: UUID4
+    name: str
+    category: str
+    price: float
+
+class PaginatedProducts(PaginationMetadata):
+    items: List[ProductOut]
+
+class RecentView(BaseModel):
+    product_id: UUID4
+    viewed_at: str
 
 # Вспомогательные функции
 async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)) -> str:
@@ -61,6 +89,51 @@ async def get_product_info(product_id: UUID4) -> dict:
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Product service unavailable")
 
+async def get_categories() -> List[Category]:
+    """Получение списка категорий из бэкенд-сервиса"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BACKEND_URL}/products/categories/list")
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Product service unavailable")
+            return [Category(**category) for category in response.json()]
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Product service unavailable")
+
+async def get_products_by_category(
+    category: str, 
+    skip: int = 0, 
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: str = "asc",
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None
+) -> PaginatedProducts:
+    """Получение товаров по категории из бэкенд-сервиса с пагинацией, сортировкой и фильтрацией"""
+    try:
+        query_params = {
+            "skip": skip,
+            "limit": limit
+        }
+        if sort_by:
+            query_params["sort_by"] = sort_by
+            query_params["sort_order"] = sort_order
+        if min_price is not None:
+            query_params["min_price"] = min_price
+        if max_price is not None:
+            query_params["max_price"] = max_price
+            
+        async with httpx.AsyncClient() as client:
+            response = await client.get(
+                f"{BACKEND_URL}/products/by-category/{category}",
+                params=query_params
+            )
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Product service unavailable")
+            return response.json()
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Product service unavailable")
+
 def get_user_cart(user_id: str) -> dict:
     """Получение корзины пользователя или создание новой"""
     if user_id not in carts_db:
@@ -71,6 +144,32 @@ def calculate_cart_total(cart: dict) -> float:
     """Расчет общей стоимости корзины"""
     return sum(item["total_price"] for item in cart["items"].values())
 
+def get_user_recent_views(user_id: str) -> list:
+    """Получение недавно просмотренных товаров пользователя"""
+    if user_id not in recent_views_db:
+        recent_views_db[user_id] = []
+    return recent_views_db[user_id]
+
+def add_recent_view(user_id: str, product_id: str):
+    """Добавление товара в список недавно просмотренных"""
+    views = get_user_recent_views(user_id)
+    
+    # Проверяем, есть ли уже этот товар в списке
+    for view in views:
+        if view["product_id"] == product_id:
+            # Если есть, обновляем время просмотра и перемещаем в начало списка
+            views.remove(view)
+            break
+    
+    # Добавляем товар в начало списка
+    views.insert(0, {
+        "product_id": product_id,
+        "viewed_at": datetime.now().isoformat()
+    })
+    
+    # Ограничиваем список 10 последними просмотренными товарами
+    recent_views_db[user_id] = views[:10]
+
 # Создание приложения FastAPI
 app = FastAPI()
 
@@ -78,6 +177,32 @@ app = FastAPI()
 @app.get("/")
 async def root():
     return {"message": "Cart Service API"}
+
+@app.get("/categories/", response_model=List[Category])
+async def get_all_categories():
+    """Получение списка всех категорий товаров"""
+    return await get_categories()
+
+@app.get("/products/category/{category}")
+async def get_category_products(
+    category: str, 
+    skip: int = 0, 
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: str = "asc",
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None
+):
+    """Получение списка товаров по категории с пагинацией, сортировкой и фильтрацией"""
+    return await get_products_by_category(
+        category, 
+        skip, 
+        limit, 
+        sort_by, 
+        sort_order, 
+        min_price, 
+        max_price
+    )
 
 @app.get("/cart/", response_model=Cart)
 async def get_cart(user_id: str = Depends(get_user_id)):
@@ -94,7 +219,7 @@ async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id))
     product = await get_product_info(item.product_id)
     
     # Проверяем наличие товара
-    if product["quantity"] < item.quantity:
+    if product["stock_count"] < item.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
     
     # Добавляем товар в корзину
@@ -130,7 +255,7 @@ async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id:
     product = await get_product_info(UUID4(cart_item["product_id"]))
     
     # Проверяем наличие товара
-    if product["quantity"] < item_update.quantity:
+    if product["stock_count"] < item_update.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
     
     # Обновляем количество и стоимость
@@ -219,6 +344,54 @@ async def clear_cart(user_id: str = Depends(get_user_id)):
     cart = get_user_cart(user_id)
     cart["items"] = {}
     return {"message": "Cart cleared"}
+
+# Новые API для отслеживания просмотренных товаров
+@app.post("/products/{product_id}/view")
+async def record_product_view(product_id: UUID4, user_id: str = Depends(get_user_id)):
+    """Запись о просмотре товара пользователем"""
+    # Проверяем существование товара
+    await get_product_info(product_id)
+    
+    # Добавляем товар в список недавно просмотренных
+    add_recent_view(user_id, str(product_id))
+    
+    return {"message": "Product view recorded"}
+
+@app.get("/products/recent-views", response_model=List[RecentView])
+async def get_recent_views(user_id: str = Depends(get_user_id)):
+    """Получение списка недавно просмотренных товаров пользователя"""
+    views = get_user_recent_views(user_id)
+    return views
+
+# Рекомендации товаров на основе просмотренных
+@app.get("/products/recommendations")
+async def get_recommendations(user_id: str = Depends(get_user_id)):
+    """Получение рекомендаций товаров на основе просмотренных"""
+    views = get_user_recent_views(user_id)
+    
+    if not views:
+        # Если нет просмотренных товаров, возвращаем популярные товары
+        return await get_category_products("Популярные", limit=10)
+    
+    # Собираем категории просмотренных товаров
+    viewed_categories = []
+    for view in views:
+        try:
+            product = await get_product_info(view["product_id"])
+            if product["category"] not in viewed_categories:
+                viewed_categories.append(product["category"])
+        except HTTPException:
+            # Игнорируем несуществующие товары
+            continue
+    
+    # Если не нашли категорий, возвращаем популярные товары
+    if not viewed_categories:
+        return await get_category_products("Популярные", limit=10)
+    
+    # Получаем рекомендации из первой категории
+    recommendations = await get_products_by_category(viewed_categories[0], limit=10)
+    
+    return recommendations
 
 # Административные маршруты
 @app.get("/carts/")

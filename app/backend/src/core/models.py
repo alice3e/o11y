@@ -3,6 +3,7 @@ import uuid
 from decimal import Decimal
 from pydantic import BaseModel, Field
 from uuid import UUID, uuid4
+from typing import List
 
 # --- Базовые строительные блоки ---
 
@@ -58,15 +59,49 @@ class ProductDetailsOut(ProductOut, ProductStock, ProductDescription):
     pass # Все поля унаследованы
 
 
-class Product(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
-    name: str
-    category: str
-    price: Decimal
-    quantity: int
-
 class ProductUpdate(BaseModel):
-    name: str | None = None
-    category: str | None = None
-    price: Decimal | None = None
-    quantity: int | None = None
+    name: str | None = Field(None, example="Молоко 'Домик в деревне'")
+    category: str | None = Field(None, example="Молочные продукты")
+    price: Decimal | None = Field(None, gt=0, description="109.90")
+    stock_count: int | None = Field(None, ge=0, example=50)
+    description: str | None = Field(None, example="Отборное коровье молоко, 3.2% жирности")
+    manufacturer: str | None = Field(None, example="Вимм-Билль-Данн")
+
+# New model for category listing
+class CategoryOut(BaseModel):
+    """
+    Модель для отображения категории и количества товаров в ней.
+    """
+    name: str = Field(..., example="Молочные продукты")
+    product_count: int = Field(..., ge=0, example=15)
+
+# Models for pagination
+class PaginationMetadata(BaseModel):
+    """
+    Метаданные пагинации
+    """
+    total: int = Field(..., description="Общее количество элементов")
+    page: int = Field(..., description="Текущая страница")
+    pages: int = Field(..., description="Общее количество страниц")
+    has_next: bool = Field(..., description="Есть ли следующая страница")
+    has_prev: bool = Field(..., description="Есть ли предыдущая страница")
+
+class PaginatedProductsResponse(PaginationMetadata):
+    """
+    Ответ с пагинацией для списка товаров
+    """
+    items: List[ProductOut] = Field(..., description="Список товаров")
+
+# Models for recent views tracking
+class RecentViewedProduct(BaseModel):
+    """
+    Модель для отслеживания недавно просмотренных товаров
+    """
+    product_id: UUID
+    viewed_at: str = Field(..., description="Время просмотра в ISO формате")
+
+class RecentViewsUpdate(BaseModel):
+    """
+    Модель для обновления недавно просмотренных товаров
+    """
+    product_id: UUID

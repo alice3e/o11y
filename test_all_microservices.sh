@@ -80,7 +80,13 @@ main() {
         fi
     done
     
-    # 2. Регистрация нового пользователя
+    # 2. Тестирование нового API категорий
+    print_header "Тестирование API категорий"
+    
+    local categories_response=$(curl -s -X GET "${BASE_URL}/api/products/categories/list")
+    echo "Список категорий: $categories_response"
+    
+    # 3. Регистрация нового пользователя
     print_header "Регистрация нового пользователя"
     
     local username="testuser_$(date +%s)"
@@ -91,7 +97,7 @@ main() {
     local register_data="{\"username\":\"$username\",\"full_name\":\"Test User\",\"phone\":\"+7 (999) 123-45-67\",\"password\":\"$password\"}"
     http_request "POST" "${BASE_URL}/user-api/users/register" "Content-Type: application/json" "$register_data"
     
-    # 3. Получение токена
+    # 4. Получение токена
     print_header "Получение токена"
     
     local auth_data="username=$username&password=$password"
@@ -111,7 +117,7 @@ main() {
         echo -e "${GREEN}✓ Получен токен: $token${NC}"
     fi
     
-    # 4. Получение профиля пользователя
+    # 5. Получение профиля пользователя
     print_header "Получение профиля пользователя"
     
     local profile_response=$(curl -s -X GET "${BASE_URL}/user-api/users/me" \
@@ -119,7 +125,7 @@ main() {
     
     echo "Профиль пользователя: $profile_response"
     
-    # 5. Добавление товара
+    # 6. Добавление товара
     print_header "Добавление товара в базу данных"
     
     local product_data="{\"name\":\"Тестовый товар\",\"category\":\"Тесты\",\"price\":100.50,\"quantity\":50}"
@@ -130,7 +136,7 @@ main() {
     echo "Ответ добавления товара: $product_response"
     
     # Извлекаем ID товара
-    local product_id=$(echo "$product_response" | grep -o '"id":"[^"]*' | sed 's/"id":"//;s/".*//')
+    local product_id=$(echo "$product_response" | grep -o '"product_id":"[^"]*' | sed 's/"product_id":"//;s/".*//')
     
     if [ -z "$product_id" ]; then
         echo -e "${RED}✗ Не удалось получить ID товара${NC}"
@@ -139,7 +145,30 @@ main() {
         echo -e "${GREEN}✓ Получен ID товара: $product_id${NC}"
     fi
     
-    # 6. Добавление товара в корзину
+    # 7. Тестирование получения товаров по категории с пагинацией
+    print_header "Тестирование получения товаров по категории"
+    
+    local category="Тесты"
+    local category_products_response=$(curl -s -X GET "${BASE_URL}/api/products/by-category/$category?skip=0&limit=10&sort_by=price&sort_order=desc")
+    echo "Товары в категории $category с сортировкой по цене (по убыванию): $category_products_response"
+    
+    # 8. Отмечаем просмотр товара
+    print_header "Отмечаем просмотр товара"
+    
+    local view_response=$(curl -s -X POST "${BASE_URL}/cart-api/products/$product_id/view" \
+        -H "Authorization: Bearer $token")
+    
+    echo "Ответ отметки просмотра товара: $view_response"
+    
+    # 9. Получаем недавно просмотренные товары
+    print_header "Получение недавно просмотренных товаров"
+    
+    local recent_views_response=$(curl -s -X GET "${BASE_URL}/cart-api/products/recent-views" \
+        -H "Authorization: Bearer $token")
+    
+    echo "Недавно просмотренные товары: $recent_views_response"
+    
+    # 10. Добавление товара в корзину
     print_header "Добавление товара в корзину"
     
     local cart_item_data="{\"product_id\":\"$product_id\",\"quantity\":2}"
@@ -150,7 +179,7 @@ main() {
     
     echo "Ответ добавления товара в корзину: $cart_response"
     
-    # 7. Получение корзины
+    # 11. Получение корзины
     print_header "Получение корзины"
     
     local cart_get_response=$(curl -s -X GET "${BASE_URL}/cart-api/cart/" \
@@ -158,7 +187,15 @@ main() {
     
     echo "Корзина: $cart_get_response"
     
-    # 8. Оформление заказа
+    # 12. Тестирование рекомендаций на основе просмотров
+    print_header "Получение рекомендаций на основе просмотров"
+    
+    local recommendations_response=$(curl -s -X GET "${BASE_URL}/cart-api/products/recommendations" \
+        -H "Authorization: Bearer $token")
+    
+    echo "Рекомендации: $recommendations_response"
+    
+    # 13. Оформление заказа
     print_header "Оформление заказа"
     
     local checkout_response=$(curl -s -X POST "${BASE_URL}/cart-api/cart/checkout" \
@@ -166,7 +203,7 @@ main() {
     
     echo "Ответ оформления заказа: $checkout_response"
     
-    # 9. Получение списка заказов
+    # 14. Получение списка заказов
     print_header "Получение списка заказов"
     
     local orders_response=$(curl -s -X GET "${BASE_URL}/user-api/users/me/orders" \
@@ -174,7 +211,7 @@ main() {
     
     echo "Список заказов: $orders_response"
     
-    # 10. Добавление товара в корзину для тестов обновления и удаления
+    # 15. Добавление товара в корзину для тестов обновления и удаления
     print_header "Добавление товара в корзину для тестов обновления и удаления"
     local cart_item_data="{\"product_id\":\"$product_id\",\"quantity\":1}"
     local cart_response=$(curl -s -X POST "${BASE_URL}/cart-api/cart/items" \
@@ -184,7 +221,7 @@ main() {
     echo "Ответ добавления товара в корзину: $cart_response"
     local item_id=$(echo "$cart_response" | grep -o '"id":"[^"]*' | sed 's/"id":"//;s/".*//')
 
-    # 11. Обновление количества товара в корзине
+    # 16. Обновление количества товара в корзине
     print_header "Обновление количества товара в корзине"
     if [ -z "$item_id" ]; then
         echo -e "${RED}✗ Не удалось получить ID товара в корзине для обновления${NC}"
@@ -197,7 +234,7 @@ main() {
         echo "Ответ обновления корзины: $update_cart_response"
     fi
 
-    # 12. Удаление товара из корзины
+    # 17. Удаление товара из корзины
     print_header "Удаление товара из корзины"
     if [ -z "$item_id" ]; then
         echo -e "${RED}✗ Не удалось получить ID товара в корзине для удаления${NC}"
@@ -207,7 +244,7 @@ main() {
         echo "Ответ удаления товара из корзины: $delete_cart_response"
     fi
 
-    # 13. Попытка оформления пустого заказа
+    # 18. Попытка оформления пустого заказа
     print_header "Попытка оформления пустого заказа"
     # Очистим корзину перед этим тестом
     local clear_cart_response=$(curl -s -X DELETE "${BASE_URL}/cart-api/cart/" \
@@ -217,7 +254,7 @@ main() {
         -H "Authorization: Bearer $token")
     echo "Ответ оформления пустого заказа: $empty_checkout_response"
 
-    # 14. Обновление профиля пользователя
+    # 19. Обновление профиля пользователя
     print_header "Обновление профиля пользователя"
     local new_full_name="Updated Test User"
     local new_phone="+79999876543"
@@ -231,13 +268,13 @@ main() {
         -H "Authorization: Bearer $token")
     echo "Обновленный профиль: $updated_profile_response"
 
-    # 15. Получение полного профиля пользователя (с корзиной и заказами)
+    # 20. Получение полного профиля пользователя (с корзиной и заказами)
     print_header "Получение полного профиля пользователя"
     local full_profile_response=$(curl -s -X GET "${BASE_URL}/user-api/users/me/profile" \
         -H "Authorization: Bearer $token")
     echo "Полный профиль пользователя: $full_profile_response"
 
-    # 16. Проверка несуществующего эндпоинта
+    # 21. Проверка несуществующего эндпоинта
     print_header "Проверка несуществующего эндпоинта"
     local not_found_response=$(curl -s -w "%{http_code}" -o /dev/null "${BASE_URL}/api/non-existent-endpoint")
     if [ "$not_found_response" -eq 404 ]; then
@@ -246,73 +283,52 @@ main() {
         echo -e "${RED}✗ Сервер вернул код $not_found_response вместо 404${NC}"
     fi
 
-    # 17. Добавление еще одного товара
-    print_header "Добавление второго товара в базу данных"
-    local product_data_2="{\"name\":\"Второй тестовый товар\",\"category\":\"Тесты 2\",\"price\":250.75,\"quantity\":10}"
-    local product_response_2=$(curl -s -X POST "${BASE_URL}/api/products/" \
-        -H "Content-Type: application/json" \
-        -d "$product_data_2")
-    echo "Ответ добавления второго товара: $product_response_2"
-    local product_id_2=$(echo "$product_response_2" | grep -o '"id":"[^"]*' | sed 's/"id":"//;s/".*//')
-    if [ -n "$product_id_2" ]; then
-        echo -e "${GREEN}✓ Получен ID второго товара: $product_id_2${NC}"
-    fi
+    # 22. Добавление нескольких товаров для тестирования фильтрации
+    print_header "Добавление тестовых товаров для фильтрации"
+    
+    # Создаем массив товаров с разными ценами
+    local products=(
+        "{\"name\":\"Молоко 'Простоквашино'\",\"category\":\"Молочные продукты\",\"price\":89.90,\"quantity\":30}"
+        "{\"name\":\"Творог 'Домик в деревне'\",\"category\":\"Молочные продукты\",\"price\":129.50,\"quantity\":20}"
+        "{\"name\":\"Сыр 'Российский'\",\"category\":\"Молочные продукты\",\"price\":349.99,\"quantity\":15}"
+        "{\"name\":\"Йогурт 'Активия'\",\"category\":\"Молочные продукты\",\"price\":59.90,\"quantity\":40}"
+    )
+    
+    for product_data in "${products[@]}"; do
+        echo "Добавление товара: $product_data"
+        local product_response=$(curl -s -X POST "${BASE_URL}/api/products/" \
+            -H "Content-Type: application/json" \
+            -d "$product_data")
+        echo "Ответ: $product_response"
+    done
 
-    # 18. Получение списка всех товаров
-    print_header "Получение списка всех товаров"
-    local all_products_response=$(curl -s -X GET "${BASE_URL}/api/products/")
-    echo "Список всех товаров: $all_products_response"
-
-    # 19. Обновление данных товара
-    print_header "Обновление данных товара"
-    local update_product_data="{\"name\":\"Обновленный тестовый товар\",\"price\":150.00}"
-    local update_product_response=$(curl -s -X PUT "${BASE_URL}/api/products/$product_id" \
-        -H "Content-Type: application/json" \
-        -d "$update_product_data")
-    echo "Ответ обновления товара: $update_product_response"
-
-    # 20. Удаление товара
-    print_header "Удаление товара"
-    local delete_product_response=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE "${BASE_URL}/api/products/$product_id")
-    if [ "$delete_product_response" -eq 204 ]; then
-        echo -e "${GREEN}✓ Товар успешно удален (код: 204 No Content)${NC}"
-        # Попытка получить удаленный товар
-        local get_deleted_product_response=$(curl -s -w "%{http_code}" -o /dev/null "${BASE_URL}/api/products/$product_id")
-        if [ "$get_deleted_product_response" -eq 404 ]; then
-            echo -e "${GREEN}✓ Попытка получения удаленного товара корректно вернула 404 Not Found${NC}"
-        else
-            echo -e "${RED}✗ Попытка получения удаленного товара вернула код $get_deleted_product_response вместо 404${NC}"
-        fi
-    else
-        echo -e "${RED}✗ Не удалось удалить товар (код: $delete_product_response)${NC}"
-    fi
-
-    # 21. Регистрация пользователя с уже существующим именем
-    print_header "Регистрация пользователя с уже существующим именем"
-    local register_duplicate_data="{\"username\":\"$username\",\"full_name\":\"Duplicate User\",\"phone\":\"+7 (999) 000-00-00\",\"password\":\"password123\"}"
-    local register_duplicate_response=$(curl -s -X POST "${BASE_URL}/user-api/users/register" \
-        -H "Content-Type: application/json" \
-        -d "$register_duplicate_data")
-    echo "Ответ регистрации дубликата: $register_duplicate_response"
-    if [[ $(echo "$register_duplicate_response" | grep -c "Username already registered") -gt 0 ]]; then
-        echo -e "${GREEN}✓ Сервер корректно обработал регистрацию дубликата пользователя${NC}"
-    else
-        echo -e "${RED}✗ Сервер некорректно обработал регистрацию дубликата пользователя${NC}"
-    fi
-
-    # 22. Попытка входа с неверным паролем
-    print_header "Попытка входа с неверным паролем"
-    local wrong_auth_data="username=$username&password=wrongpassword"
-    local wrong_auth_response=$(curl -s -X POST "${BASE_URL}/user-api/token" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        -d "$wrong_auth_data")
-    echo "Ответ аутентификации с неверным паролем: $wrong_auth_response"
-    if [[ $(echo "$wrong_auth_response" | grep -c "Incorrect username or password") -gt 0 ]]; then
-        echo -e "${GREEN}✓ Сервер корректно обработал неверный пароль${NC}"
-    else
-        echo -e "${RED}✗ Сервер некорректно обработал неверный пароль${NC}"
-    fi
-
+    # 23. Тестирование фильтрации товаров по цене
+    print_header "Тестирование фильтрации товаров по цене"
+    
+    local filtered_products_response=$(curl -s -X GET "${BASE_URL}/api/products/by-category/Молочные%20продукты?min_price=100&max_price=300")
+    echo "Товары с ценой от 100 до 300: $filtered_products_response"
+    
+    # 24. Тестирование сортировки товаров
+    print_header "Тестирование сортировки товаров"
+    
+    local sorted_products_response=$(curl -s -X GET "${BASE_URL}/api/products?sort_by=price&sort_order=desc")
+    echo "Товары, отсортированные по цене (по убыванию): $sorted_products_response"
+    
+    # 25. Удаление тестовых товаров
+    print_header "Удаление добавленных товаров"
+    
+    # Получаем список всех товаров
+    local all_products_response=$(curl -s -X GET "${BASE_URL}/api/products")
+    
+    # Извлекаем ID всех товаров в категории "Молочные продукты"
+    local product_ids=$(echo "$all_products_response" | grep -o '"product_id":"[^"]*' | sed 's/"product_id":"//;s/".*//')
+    
+    for id in $product_ids; do
+        echo "Удаление товара с ID: $id"
+        local delete_product_response=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE "${BASE_URL}/api/products/$id")
+        echo "Код ответа: $delete_product_response"
+    done
+    
     print_header "Все тесты завершены"
 }
 

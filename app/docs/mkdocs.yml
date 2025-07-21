@@ -1,49 +1,20 @@
-# Файл: infra/mkdocs.yml
-
-site_name: Product Store
-site_url: http://localhost/docs/
-site_description: Документация для проекта Product Store
-site_author: KIT Student
-
-# Навигация
-nav:
-  - Главная: index.md
-  - Архитектура: architecture.md
-  - Микросервисы: microservices.md
-  - Аутентификация: authentication.md
-  - Тестирование: testing.md
-  - База данных: database.md
-  - API: api_docs.md
-  - План работ: future_plans.md
-  - Воспроизведение алертов: reproduce_alerts.md
-
-# Тема
+site_name: Product Store API
 theme:
   name: material
-  language: ru
-  features:
-    - navigation.instant
-    - navigation.tracking
-    - navigation.expand
-    - navigation.indexes
-    - content.code.annotate
-  palette:
-    primary: blue
-    accent: blue
+nav:
+  - 'Введение': 'index.md'
+  - 'API': 'api_docs.md'
+  - 'Архитектура': 'architecture.md'
+  - 'Микросервисы': 'microservices.md'
+  - 'База данных': 'database.md'
+  - 'Тестирование': 'testing.md'
+  - 'Аутентификация': 'authentication.md'
+  - 'Планы на будущее': 'future_plans.md'
+  - 'Воспроизведение алертов': 'reproduce_alerts.md'
 
-# Расширения Markdown
-markdown_extensions:
-  - pymdownx.highlight
-  - pymdownx.superfences
-  - pymdownx.tasklist:
-      custom_checkbox: true
-  - admonition
-  - footnotes
-  - toc:
-      permalink: true
-
-# Плагины
-plugins:
-  - search
-  - minify:
-      minify_html: true
+extra_javascript:
+  - https://unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js
+  - https://unpkg.com/swagger-ui-dist@3/swagger-ui-standalone-preset.js
+  
+extra_css:
+  - https://unpkg.com/swagger-ui-dist@3/swagger-ui.css 
