@@ -67,41 +67,25 @@ class ProductUpdate(BaseModel):
     description: str | None = Field(None, example="Отборное коровье молоко, 3.2% жирности")
     manufacturer: str | None = Field(None, example="Вимм-Билль-Данн")
 
-# New model for category listing
 class CategoryOut(BaseModel):
     """
-    Модель для отображения категории и количества товаров в ней.
+    Модель для отображения категории с количеством товаров.
     """
-    name: str = Field(..., example="Молочные продукты")
-    product_count: int = Field(..., ge=0, example=15)
+    name: str
+    product_count: int
 
-# Models for pagination
 class PaginationMetadata(BaseModel):
     """
-    Метаданные пагинации
+    Метаданные пагинации для списков с разбивкой по страницам.
     """
-    total: int = Field(..., description="Общее количество элементов")
-    page: int = Field(..., description="Текущая страница")
-    pages: int = Field(..., description="Общее количество страниц")
-    has_next: bool = Field(..., description="Есть ли следующая страница")
-    has_prev: bool = Field(..., description="Есть ли предыдущая страница")
+    total: int
+    page: int
+    pages: int
+    has_next: bool
+    has_prev: bool
 
 class PaginatedProductsResponse(PaginationMetadata):
     """
-    Ответ с пагинацией для списка товаров
+    Модель для списка товаров с пагинацией.
     """
-    items: List[ProductOut] = Field(..., description="Список товаров")
-
-# Models for recent views tracking
-class RecentViewedProduct(BaseModel):
-    """
-    Модель для отслеживания недавно просмотренных товаров
-    """
-    product_id: UUID
-    viewed_at: str = Field(..., description="Время просмотра в ISO формате")
-
-class RecentViewsUpdate(BaseModel):
-    """
-    Модель для обновления недавно просмотренных товаров
-    """
-    product_id: UUID
+    items: List[ProductOut]

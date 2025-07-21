@@ -14,6 +14,12 @@ RUN chmod +x /app/entrypoint.sh
 # --- Финальный этап ---
 FROM nginx:1.21-alpine
 
+# Устанавливаем необходимые пакеты
+RUN apk --no-cache add python3 py3-pip wget curl
+
+# Устанавливаем Python зависимости
+RUN pip3 install --no-cache-dir requests
+
 # Копируем необходимые файлы со сборочного этапа
 COPY --from=builder /app/generate_swagger.py /app/generate_swagger.py
 COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
@@ -22,13 +28,5 @@ COPY --from=builder /app/entrypoint.sh /app/entrypoint.sh
 COPY app/swagger-ui/index.html /usr/share/nginx/html/index.html
 COPY app/swagger-ui/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Устанавливаем Python и зависимости, необходимые для entrypoint
-RUN apk --no-cache add python3 py3-pip && \
-    pip3 install --no-cache-dir requests && \
-    ln -sf /usr/bin/python3 /usr/bin/python
-
-# Устанавливаем рабочую директорию
-WORKDIR /app
-
-# Устанавливаем entrypoint
+# Определяем точку входа
 ENTRYPOINT ["/app/entrypoint.sh"] 

@@ -125,6 +125,12 @@ services:
         condition: service_healthy
       user-service:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/swagger.json"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     networks:
       - product-store-net
 
@@ -145,9 +151,9 @@ services:
         condition: service_healthy
       user-service:
         condition: service_healthy
-      docs:
-        condition: service_started
       swagger-ui:
+        condition: service_healthy
+      docs:
         condition: service_started
     networks:
       - product-store-net

@@ -13,9 +13,60 @@
         #swagger-ui {
             height: 100%;
         }
+        .topbar {
+            background-color: #2C3E50 !important;
+            padding: 10px 0;
+        }
+        .swagger-ui .topbar .download-url-wrapper .select-label {
+            color: white !important;
+        }
+        .swagger-ui .info .title {
+            color: #2C3E50;
+        }
+        .auth-wrapper {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            padding: 10px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+        .auth-btn {
+            margin-left: 10px;
+            padding: 8px 16px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .auth-btn:hover {
+            background-color: #45a049;
+        }
+        .auth-input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            margin-right: 10px;
+            flex: 1;
+        }
+        .admin-toggle {
+            margin-left: 20px;
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
+    <div class="auth-wrapper">
+        <input id="token-input" class="auth-input" placeholder="JWT Token" type="text">
+        <button id="auth-btn" class="auth-btn">Authorize</button>
+        
+        <div class="admin-toggle">
+            <input id="admin-checkbox" type="checkbox">
+            <label for="admin-checkbox">Admin Mode</label>
+        </div>
+    </div>
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
     <script>
@@ -33,11 +84,91 @@
                 ],
                 layout: "StandaloneLayout",
                 persistAuthorization: true,
+                docExpansion: "none", // Collapse all by default for cleaner look
+                defaultModelsExpandDepth: 1,
+                filter: true, // Enable filtering
+                tagsSorter: "alpha", // Sort tags alphabetically
+                operationsSorter: "alpha", // Sort operations alphabetically
             });
-            ui.initOAuth({
-                clientId: "your-client-id",
-                scopes: "openid",
+            
+            // Функция для применения JWT токена к авторизации Swagger UI
+            function applyToken() {
+                const token = document.getElementById('token-input').value;
+                if (token) {
+                    ui.authActions.authorize({
+                        bearerAuth: {
+                            name: "bearerAuth",
+                            schema: {
+                                type: "http",
+                                scheme: "bearer"
+                            },
+                            value: token
+                        }
+                    });
+                }
+            }
+            
+            // Функция для установки или удаления заголовка admin
+            function toggleAdmin() {
+                const isAdmin = document.getElementById('admin-checkbox').checked;
+                
+                if (isAdmin) {
+                    ui.authActions.authorize({
+                        adminAuth: {
+                            name: "adminAuth",
+                            schema: {
+                                type: "apiKey",
+                                in: "header",
+                                name: "admin"
+                            },
+                            value: "true"
+                        }
+                    });
+                } else {
+                    ui.authActions.logout(["adminAuth"]);
+                }
+            }
+            
+            // Добавляем обработчики событий
+            document.getElementById('auth-btn').addEventListener('click', applyToken);
+            document.getElementById('admin-checkbox').addEventListener('change', toggleAdmin);
+            
+            // Обработка нажатия Enter в поле ввода токена
+            document.getElementById('token-input').addEventListener('keypress', function(event) {
+                if (event.key === 'Enter') {
+                    applyToken();
+                }
             });
+            
+            // Функция для получения токена из пользовательского сервиса
+            async function loginAndGetToken(username, password) {
+                try {
+                    const formData = new FormData();
+                    formData.append('username', username);
+                    formData.append('password', password);
+                    
+                    const response = await fetch('/user-api/token', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        document.getElementById('token-input').value = data.access_token;
+                        applyToken();
+                        return true;
+                    } else {
+                        console.error('Login failed:', await response.text());
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Login error:', error);
+                    return false;
+                }
+            }
+            
+            // Экспортируем функцию для доступа из консоли (для тестирования)
+            window.loginAndGetToken = loginAndGetToken;
         }
     </script>
 </body>
