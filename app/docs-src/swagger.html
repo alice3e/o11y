@@ -4,88 +4,48 @@
     <title>Unified API Documentation</title>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@3/swagger-ui.css">
+    <meta http-equiv="refresh" content="0; URL=/swagger/" />
     <style>
         html, body {
             height: 100%;
             margin: 0;
             padding: 0;
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            background-color: #f5f5f5;
         }
-        #swagger-ui {
-            height: 100%;
+        .container {
+            text-align: center;
+            padding: 20px;
+            background-color: white;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            max-width: 600px;
         }
-        .topbar {
-            background-color: #f7f7f7;
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
+        h1 {
+            color: #333;
         }
-        #api-selector, #auth-token {
-            padding: 5px;
+        p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        a {
+            color: #0066cc;
+            text-decoration: none;
+        }
+        a:hover {
+            text-decoration: underline;
         }
     </style>
 </head>
 <body>
-    <div class="topbar">
-        <select id="api-selector">
-            <option value="http://localhost/api/openapi.json">Backend API</option>
-            <option value="http://localhost/cart-api/openapi.json">Cart Service</option>
-            <option value="http://localhost/order-api/openapi.json">Order Service</option>
-            <option value="http://localhost/user-api/openapi.json">User Service</option>
-        </select>
-        <input type="text" id="auth-token" placeholder="Enter Bearer Token" size="40">
-        <button id="auth-btn">Authorize</button>
+    <div class="container">
+        <h1>Перенаправление на Unified Swagger UI</h1>
+        <p>Вы будете автоматически перенаправлены на новый единый интерфейс Swagger UI через несколько секунд.</p>
+        <p>Если перенаправление не происходит, пожалуйста, <a href="/swagger/">нажмите здесь</a>.</p>
     </div>
-
-    <div id="swagger-ui"></div>
-
-    <script src="https://unpkg.com/swagger-ui-dist@3/swagger-ui-bundle.js"></script>
-    <script>
-        document.addEventListener("DOMContentLoaded", function() {
-            const selector = document.getElementById("api-selector");
-            const authTokenInput = document.getElementById("auth-token");
-            const authBtn = document.getElementById("auth-btn");
-
-            let ui;
-
-            function initSwagger(url) {
-                ui = SwaggerUIBundle({
-                    url: url,
-                    dom_id: '#swagger-ui',
-                    deepLinking: true,
-                    presets: [
-                        SwaggerUIBundle.presets.apis,
-                        SwaggerUIBundle.SwaggerUIStandalonePreset
-                    ],
-                    plugins: [
-                        SwaggerUIBundle.plugins.DownloadUrl
-                    ],
-                    layout: "StandaloneLayout"
-                });
-            }
-
-            function updateAuth() {
-                if (ui) {
-                    const token = authTokenInput.value;
-                    const security = {
-                        "BearerAuth": {
-                            "value": token
-                        }
-                    };
-                    ui.authActions.authorize(security);
-                }
-            }
-
-            selector.addEventListener("change", function() {
-                initSwagger(this.value);
-            });
-
-            authBtn.addEventListener("click", function() {
-                updateAuth();
-            });
-
-            // Load the initial API
-            initSwagger(selector.value);
-        });
-    </script>
 </body>
 </html> 

@@ -7,6 +7,11 @@ from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+import logging
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # Настройки
 SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey123")
@@ -75,6 +80,62 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+# Функция для создания пользователя
+def create_user(username: str, password: str, full_name: str, phone: str, is_admin: bool = False) -> UserInDB:
+    if username in users_db:
+        return users_db[username]
+    
+    hashed_password = get_password_hash(password)
+    user_in_db = UserInDB(
+        username=username,
+        full_name=full_name,
+        phone=phone,
+        hashed_password=hashed_password,
+        id=f"{len(users_db) + 1:08d}",
+        created_at=datetime.now(),
+        total_spent=0.0
+    )
+    users_db[username] = user_in_db
+    
+    # Создаем токен для пользователя
+    access_token_expires = timedelta(days=30)  # Длительный срок для демо
+    access_token = create_access_token(
+        data={"sub": username}, expires_delta=access_token_expires
+    )
+    
+    # Логируем информацию о созданном пользователе
+    admin_status = "ADMIN USER" if is_admin else "REGULAR USER"
+    logger.info(f"Created {admin_status}: {username}")
+    logger.info(f"Username: {username}")
+    logger.info(f"Password: {password}")
+    logger.info(f"Access Token: {access_token}")
+    
+    return user_in_db
+
+# Создаем демо пользователей при запуске
+@app.on_event("startup")
+async def startup_event():
+    logger.info("Creating default users for Swagger UI...")
+    
+    # Создаем обычного пользователя
+    create_user(
+        username="swagger_user",
+        password="password123",
+        full_name="Swagger Regular User",
+        phone="+7 (999) 123-45-67"
+    )
+    
+    # Создаем пользователя с правами администратора
+    create_user(
+        username="swagger_admin",
+        password="admin123",
+        full_name="Swagger Admin User",
+        phone="+7 (999) 987-65-43",
+        is_admin=True
+    )
+    
+    logger.info("Default users created successfully!")
 
 # Функции для работы с пользователями
 async def get_current_user(token: str = Depends(oauth2_scheme)):
@@ -292,4 +353,23 @@ async def notify_order_status(order_update: dict):
     """Обработка уведомления об изменении статуса заказа"""
     # В реальном приложении здесь была бы логика обновления информации о заказе
     # и отправка уведомления пользователю
-    return {"message": "Order status update received"} 
+    return {"message": "Order status update received"}
+
+# Эндпоинт для получения токена администратора (для Swagger UI)
+@app.get("/swagger-admin-token")
+async def get_swagger_admin_token():
+    """Получение токена администратора для Swagger UI"""
+    if "swagger_admin" not in users_db:
+        raise HTTPException(status_code=404, detail="Swagger admin user not found")
+    
+    access_token_expires = timedelta(days=30)  # Длительный срок для демо
+    access_token = create_access_token(
+        data={"sub": "swagger_admin"}, expires_delta=access_token_expires
+    )
+    
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "username": "swagger_admin",
+        "is_admin": True
+    } 

@@ -55,6 +55,19 @@
             display: flex;
             align-items: center;
         }
+        .auth-status {
+            margin-left: 20px;
+            padding: 5px 10px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .auth-info {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+        }
     </style>
 </head>
 <body>
@@ -63,9 +76,16 @@
         <button id="auth-btn" class="auth-btn">Authorize</button>
         
         <div class="admin-toggle">
-            <input id="admin-checkbox" type="checkbox">
+            <input id="admin-checkbox" type="checkbox" checked>
             <label for="admin-checkbox">Admin Mode</label>
         </div>
+
+        <div class="auth-status">
+            Logged in as: <span id="current-user">swagger_admin</span>
+        </div>
+    </div>
+    <div class="auth-info">
+        Default users: swagger_admin (password: admin123) and swagger_user (password: password123)
     </div>
     <div id="swagger-ui"></div>
     <script src="https://unpkg.com/swagger-ui-dist@4/swagger-ui-bundle.js"></script>
@@ -155,6 +175,7 @@
                     if (response.ok) {
                         const data = await response.json();
                         document.getElementById('token-input').value = data.access_token;
+                        document.getElementById('current-user').textContent = username;
                         applyToken();
                         return true;
                     } else {
@@ -167,8 +188,37 @@
                 }
             }
             
+            // Функция для автоматического получения токена администратора
+            async function getSwaggerAdminToken() {
+                try {
+                    const response = await fetch('/user-api/swagger-admin-token');
+                    
+                    if (response.ok) {
+                        const data = await response.json();
+                        document.getElementById('token-input').value = data.access_token;
+                        document.getElementById('current-user').textContent = data.username;
+                        applyToken();
+                        
+                        // Устанавливаем админский режим
+                        document.getElementById('admin-checkbox').checked = true;
+                        toggleAdmin();
+                        
+                        return true;
+                    } else {
+                        console.error('Failed to get admin token:', await response.text());
+                        return false;
+                    }
+                } catch (error) {
+                    console.error('Admin token error:', error);
+                    return false;
+                }
+            }
+            
             // Экспортируем функцию для доступа из консоли (для тестирования)
             window.loginAndGetToken = loginAndGetToken;
+            
+            // Автоматически получаем токен администратора при загрузке страницы
+            getSwaggerAdminToken();
         }
     </script>
 </body>
