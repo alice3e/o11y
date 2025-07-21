@@ -1,36 +1,24 @@
 import os
 import httpx
-from fastapi import FastAPI, HTTPException, Depends, Request, Form, status
+from fastapi import FastAPI, HTTPException, Depends, status, Form, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel, Field, EmailStr
-from typing import List, Dict, Optional
-from uuid import UUID, uuid4
+from pydantic import BaseModel, EmailStr, Field
+from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 
-# Настройки безопасности
-SECRET_KEY = "09d25e094faa6ca2556c818166b7a9563b93f7099f6f0f4caa6cf63b88e8d3e7"  # В реальном приложении должен храниться в переменных окружения
+# Настройки
+SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey123")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
+CART_SERVICE_URL = os.environ.get("CART_SERVICE_URL", "http://cart-service:8001")
+ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:8002")
+
+# Создание приложения FastAPI
+app = FastAPI()
 
 # Модели данных
-class UserBase(BaseModel):
-    username: str
-    full_name: Optional[str] = None
-    phone: Optional[str] = None
-
-class UserCreate(UserBase):
-    password: str
-
-class User(UserBase):
-    id: UUID = Field(default_factory=uuid4)
-    created_at: datetime = Field(default_factory=datetime.now)
-    total_spent: float = 0.0
-
-class UserInDB(User):
-    hashed_password: str
-
 class Token(BaseModel):
     access_token: str
     token_type: str
@@ -38,61 +26,57 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     username: Optional[str] = None
 
-class OrderSummary(BaseModel):
-    id: UUID
-    total_price: float
-    status: str
+class UserBase(BaseModel):
+    username: str
+    full_name: str
+    phone: str
+
+class UserCreate(UserBase):
+    password: str
+
+class User(UserBase):
+    id: str
     created_at: datetime
+    total_spent: float = 0.0
+
+class UserInDB(User):
+    hashed_password: str
+
+class OrderSummary(BaseModel):
+    id: str
+    status: str
+    total: float
+    created_at: str
 
 class UserProfile(User):
-    orders: List[OrderSummary] = []
-    current_cart_total: float = 0.0
+    current_cart_total: float
+    orders: List[OrderSummary]
 
-# Хранилище пользователей (в памяти для примера)
-# Структура: {username: UserInDB}
+# In-memory хранилище пользователей
 users_db: Dict[str, UserInDB] = {}
 
-# Инструменты для работы с паролями и токенами
+# Настройка безопасности
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Создание приложения FastAPI
-app = FastAPI(
-    title="User Service API",
-    description="Сервис для управления пользователями",
-    version="0.1.0",
-)
-
-# Вспомогательные функции
+# Функции для работы с паролями и токенами
 def verify_password(plain_password, hashed_password):
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password):
     return pwd_context.hash(password)
 
-def get_user(username: str):
-    if username in users_db:
-        return users_db[username]
-    return None
-
-def authenticate_user(username: str, password: str):
-    user = get_user(username)
-    if not user:
-        return False
-    if not verify_password(password, user.hashed_password):
-        return False
-    return user
-
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
+# Функции для работы с пользователями
 async def get_current_user(token: str = Depends(oauth2_scheme)):
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -107,7 +91,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         token_data = TokenData(username=username)
     except JWTError:
         raise credentials_exception
-    user = get_user(username=token_data.username)
+    user = users_db.get(token_data.username)
     if user is None:
         raise credentials_exception
     return user
@@ -115,13 +99,13 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def get_current_active_user(current_user: UserInDB = Depends(get_current_user)):
     return current_user
 
-# Клиенты для взаимодействия с другими сервисами
+# Клиенты для других сервисов
 async def get_cart_api_client():
-    async with httpx.AsyncClient(base_url=f"http://{os.getenv('CART_SERVICE_HOST', 'cart-service')}") as client:
+    async with httpx.AsyncClient(base_url=CART_SERVICE_URL) as client:
         yield client
 
 async def get_order_api_client():
-    async with httpx.AsyncClient(base_url=f"http://{os.getenv('ORDER_SERVICE_HOST', 'order-service')}") as client:
+    async with httpx.AsyncClient(base_url=ORDER_SERVICE_URL) as client:
         yield client
 
 # Эндпоинты
@@ -137,18 +121,22 @@ async def register_user(user: UserCreate):
     
     hashed_password = get_password_hash(user.password)
     user_in_db = UserInDB(
-        **user.dict(exclude={"password"}),
-        hashed_password=hashed_password
+        username=user.username,
+        full_name=user.full_name,
+        phone=user.phone,
+        hashed_password=hashed_password,
+        id=f"{len(users_db) + 1:08d}",
+        created_at=datetime.now(),
+        total_spent=0.0
     )
     users_db[user.username] = user_in_db
-    
     return user_in_db
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Аутентификация пользователя и получение токена"""
-    user = authenticate_user(form_data.username, form_data.password)
-    if not user:
+    user = users_db.get(form_data.username)
+    if not user or not verify_password(form_data.password, user.hashed_password):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
@@ -165,6 +153,21 @@ async def read_users_me(current_user: UserInDB = Depends(get_current_active_user
     """Получение информации о текущем пользователе"""
     return current_user
 
+@app.put("/users/me", response_model=User)
+async def update_user(
+    full_name: Optional[str] = Form(None),
+    phone: Optional[str] = Form(None),
+    current_user: UserInDB = Depends(get_current_active_user)
+):
+    """Обновление информации о пользователе"""
+    if full_name:
+        current_user.full_name = full_name
+    if phone:
+        current_user.phone = phone
+    
+    users_db[current_user.username] = current_user
+    return current_user
+
 @app.get("/users/me/profile", response_model=UserProfile)
 async def get_user_profile(
     current_user: UserInDB = Depends(get_current_active_user),
@@ -177,7 +180,7 @@ async def get_user_profile(
         cart_response = await cart_api.get("/cart/", headers={"X-User-ID": current_user.username})
         if cart_response.status_code == 200:
             cart_data = cart_response.json()
-            current_cart_total = cart_data.get("total_price", 0.0)
+            current_cart_total = cart_data.get("total", 0.0)
         else:
             current_cart_total = 0.0
     except httpx.RequestError:
@@ -191,8 +194,8 @@ async def get_user_profile(
             orders = [
                 OrderSummary(
                     id=order["id"],
-                    total_price=order["total_price"],
                     status=order["status"],
+                    total=order["total"],
                     created_at=order["created_at"]
                 )
                 for order in orders_data
@@ -202,29 +205,11 @@ async def get_user_profile(
     except httpx.RequestError:
         orders = []
     
-    # Создаем профиль пользователя
-    profile = UserProfile(
-        **current_user.dict(exclude={"hashed_password"}),
-        orders=orders,
-        current_cart_total=current_cart_total
+    return UserProfile(
+        **current_user.dict(),
+        current_cart_total=current_cart_total,
+        orders=orders
     )
-    
-    return profile
-
-@app.put("/users/me", response_model=User)
-async def update_user(
-    full_name: Optional[str] = Form(None),
-    phone: Optional[str] = Form(None),
-    current_user: UserInDB = Depends(get_current_active_user)
-):
-    """Обновление информации о пользователе"""
-    if full_name is not None:
-        current_user.full_name = full_name
-    if phone is not None:
-        current_user.phone = phone
-    
-    users_db[current_user.username] = current_user
-    return current_user
 
 @app.get("/users/me/orders", response_model=List[OrderSummary])
 async def get_user_orders(
@@ -233,14 +218,25 @@ async def get_user_orders(
 ):
     """Получение списка заказов пользователя"""
     try:
-        response = await order_api.get("/orders/", headers={"X-User-ID": current_user.username})
+        # Создаем токен для аутентификации в сервисе заказов
+        access_token = create_access_token(data={"sub": current_user.username})
+        
+        # Отправляем запрос с токеном для аутентификации
+        response = await order_api.get(
+            "/orders/", 
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "X-User-ID": current_user.username
+            }
+        )
+        
         if response.status_code == 200:
             orders_data = response.json()
             orders = [
                 OrderSummary(
                     id=order["id"],
-                    total_price=order["total_price"],
                     status=order["status"],
+                    total=order["total"],
                     created_at=order["created_at"]
                 )
                 for order in orders_data
@@ -277,39 +273,23 @@ async def create_order_from_cart(
         if response.status_code == 200:
             # Обновляем общую сумму потраченных средств пользователя
             order_data = response.json()
-            current_user.total_spent += order_data.get("total_price", 0.0)
+            current_user.total_spent += order_data.get("total", 0.0)
             users_db[current_user.username] = current_user
             
             return response.json()
         else:
-            raise HTTPException(status_code=response.status_code, detail="Failed to create order")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Cart service unavailable")
+            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Failed to create order"))
+    except httpx.RequestError as e:
+        raise HTTPException(status_code=503, detail=f"Cart service unavailable: {str(e)}")
 
 @app.get("/users/me/total-spent")
 async def get_total_spent(current_user: UserInDB = Depends(get_current_active_user)):
     """Получение общей суммы потраченных средств"""
     return {"total_spent": current_user.total_spent}
 
-# Добавим тестового пользователя для демонстрации
-@app.on_event("startup")
-async def startup_event():
-    # Создаем тестового пользователя
-    if "testuser" not in users_db:
-        hashed_password = get_password_hash("password123")
-        users_db["testuser"] = UserInDB(
-            username="testuser",
-            full_name="Test User",
-            phone="+7 (999) 123-45-67",
-            hashed_password=hashed_password
-        )
-    
-    # Создаем тестового администратора
-    if "admin" not in users_db:
-        hashed_password = get_password_hash("admin123")
-        users_db["admin"] = UserInDB(
-            username="admin",
-            full_name="Administrator",
-            phone="+7 (999) 999-99-99",
-            hashed_password=hashed_password
-        ) 
+@app.post("/users/notify/order-status")
+async def notify_order_status(order_update: dict):
+    """Обработка уведомления об изменении статуса заказа"""
+    # В реальном приложении здесь была бы логика обновления информации о заказе
+    # и отправка уведомления пользователю
+    return {"message": "Order status update received"} 

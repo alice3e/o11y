@@ -1,98 +1,109 @@
+version: '3'
+
 services:
-  nginx:
-    build:
-      context: ..
-      dockerfile: app/nginx/Dockerfile
+  # База данных Cassandra
+  cassandra:
+    image: cassandra:4.1
+    container_name: infra-cassandra
     ports:
-      - "80:80"
+      - "9042:9042"
+    volumes:
+      - cassandra_data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
     networks:
       - product-store-net
-    depends_on:
-      - backend
-      - docs
-      - cart-service
-      - order-service
-      - user-service
 
+  # Backend API сервис
   backend:
     build:
       context: ..
       dockerfile: app/backend/Dockerfile
-    environment:
-      - CASSANDRA_HOST=cassandra
-    volumes:
-      # Пути в volumes относительны YAML-файла, поэтому ../ выходит в корень
-      - ../app/backend/src:/app/src
-    networks:
-      - product-store-net
+    container_name: infra-backend
     depends_on:
       cassandra:
         condition: service_healthy
+    environment:
+      - CASSANDRA_HOST=cassandra
+    networks:
+      - product-store-net
 
+  # Сервис корзины
   cart-service:
     build:
       context: ..
       dockerfile: app/cart-service/Dockerfile
-    environment:
-      - BACKEND_HOST=backend
-      - ORDER_SERVICE_HOST=order-service
-    volumes:
-      - ../app/cart-service/src:/app/src
-    networks:
-      - product-store-net
+    container_name: infra-cart-service
     depends_on:
       - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - ORDER_SERVICE_URL=http://order-service:8002
+    networks:
+      - product-store-net
 
+  # Сервис заказов
   order-service:
     build:
       context: ..
       dockerfile: app/order-service/Dockerfile
-    environment:
-      - BACKEND_HOST=backend
-    volumes:
-      - ../app/order-service/src:/app/src
-    networks:
-      - product-store-net
+    container_name: infra-order-service
     depends_on:
       - backend
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - USER_SERVICE_URL=http://user-service:8003
+    networks:
+      - product-store-net
 
+  # Сервис пользователей
   user-service:
     build:
       context: ..
       dockerfile: app/user-service/Dockerfile
-    environment:
-      - CART_SERVICE_HOST=cart-service
-      - ORDER_SERVICE_HOST=order-service
-    volumes:
-      - ../app/user-service/src:/app/src
-    networks:
-      - product-store-net
+    container_name: infra-user-service
     depends_on:
+      - backend
       - cart-service
       - order-service
+    environment:
+      - CART_SERVICE_URL=http://cart-service:8001
+      - ORDER_SERVICE_URL=http://order-service:8002
+      - SECRET_KEY=supersecretkey123
+    networks:
+      - product-store-net
 
+  # Документация
   docs:
     build:
       context: ..
       dockerfile: app/docs/Dockerfile
+    container_name: infra-docs
     networks:
       - product-store-net
 
-  cassandra:
-    image: cassandra:4.1
+  # Nginx для маршрутизации запросов
+  nginx:
+    build:
+      context: ..
+      dockerfile: app/nginx/Dockerfile
+    container_name: infra-nginx
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+      - cart-service
+      - order-service
+      - user-service
+      - docs
     networks:
       - product-store-net
-    volumes:
-      - cassandra-data:/var/lib/cassandra
-    healthcheck:
-      test: ["CMD-SHELL", "cqlsh -e 'describe keyspaces'"]
-      interval: 15s
-      timeout: 10s
-      retries: 10
 
 volumes:
-  cassandra-data:
-    driver: local
+  cassandra_data:
 
 networks:
   product-store-net:

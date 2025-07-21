@@ -2,260 +2,260 @@ import os
 import httpx
 import asyncio
 import random
-from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks, Header
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
-from uuid import UUID, uuid4
-from datetime import datetime, timedelta
+import jwt
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
+from pydantic import BaseModel, UUID4
+import uuid
+from typing import List, Dict, Optional, Any
+from datetime import datetime
+
+app = FastAPI()
+
+# Настройки
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
+USER_SERVICE_URL = os.environ.get("USER_SERVICE_URL", "http://user-service:8003")
+SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey123")
+ALGORITHM = "HS256"
+
+# Статусы заказа
+ORDER_STATUSES = {
+    "CREATED": "Создан",
+    "PROCESSING": "Обрабатывается",
+    "SHIPPING": "Доставляется",
+    "DELIVERED": "Доставлен",
+    "CANCELLED": "Отменен"
+}
+
+# In-memory хранилище заказов
+orders_db: Dict[str, Dict[str, Any]] = {}
 
 # Модели данных
 class OrderItem(BaseModel):
     product_id: str
-    quantity: int
+    name: str
     price: float
-    product_name: str
+    quantity: int
 
 class OrderCreate(BaseModel):
-    user_id: str
     items: List[OrderItem]
-    total_price: float
+    total: float
 
 class Order(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
+    id: str
     user_id: str
     items: List[OrderItem]
-    total_price: float
-    status: str = "new"
-    created_at: datetime = Field(default_factory=datetime.now)
-    updated_at: Optional[datetime] = None
-    estimated_delivery: Optional[datetime] = None
-
-# Статусы заказа
-ORDER_STATUSES = ["new", "processing", "preparing", "shipping", "delivered", "cancelled"]
-
-# Хранилище заказов (в памяти для примера)
-# Структура: {order_id: Order}
-orders_db: Dict[UUID, Order] = {}
-
-# Создание приложения FastAPI
-app = FastAPI(
-    title="Order Service API",
-    description="Сервис для управления заказами",
-    version="0.1.0",
-)
+    total: float
+    status: str
+    created_at: str
+    updated_at: str
 
 # Вспомогательные функции
-def get_user_id(request: Request) -> str:
-    # В реальном приложении здесь была бы аутентификация
-    # Для примера используем заголовок X-User-ID
-    user_id = request.headers.get("X-User-ID", "anonymous")
-    return user_id
+async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)) -> str:
+    """Получение идентификатора пользователя из заголовка Authorization или X-User-ID"""
+    if x_user_id:
+        return x_user_id
+    
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Извлекаем user_id из токена
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = parts[1]
+    
+    # Пытаемся декодировать JWT для получения username
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username:
+            return username
+    except Exception:
+        # Если не удалось декодировать, используем токен как идентификатор
+        pass
+    
+    # Возвращаем токен как идентификатор пользователя
+    return token
 
-def is_admin(request: Request) -> bool:
-    # В реальном приложении здесь была бы проверка прав администратора
-    # Для примера используем заголовок X-Admin
-    return request.headers.get("X-Admin") == "true"
-
-async def get_product_api_client():
-    async with httpx.AsyncClient(base_url=f"http://{os.getenv('BACKEND_HOST', 'backend')}/api") as client:
-        yield client
-
-# Проверка авторизации (опционально)
-async def verify_token(x_token: Optional[str] = Header(None)):
-    if x_token is None:
-        return None
-    # В реальном приложении здесь была бы проверка токена через сервис пользователей
-    return x_token
-
-# Функция для автоматического обновления статуса заказа
-async def process_order(order_id: UUID):
-    # Получаем заказ
+async def process_order(order_id: str, background_tasks: BackgroundTasks):
+    """Фоновая задача для обработки заказа"""
+    # Имитация процесса обработки заказа
     if order_id not in orders_db:
         return
     
-    order = orders_db[order_id]
+    # Изменение статуса на "Обрабатывается"
+    await asyncio.sleep(5)  # Имитация задержки
+    if order_id in orders_db and orders_db[order_id]["status"] != "CANCELLED":
+        orders_db[order_id]["status"] = "PROCESSING"
+        orders_db[order_id]["updated_at"] = datetime.now().isoformat()
+        await notify_user_service(order_id, "PROCESSING")
     
-    # Генерируем случайное время для каждого статуса (от 1 до 5 минут)
-    # Для демонстрации используем секунды вместо минут
-    processing_time = random.randint(10, 30)  # 10-30 секунд
-    preparing_time = random.randint(10, 30)   # 10-30 секунд
-    shipping_time = random.randint(10, 30)    # 10-30 секунд
+    # Изменение статуса на "Доставляется"
+    await asyncio.sleep(5)  # Имитация задержки
+    if order_id in orders_db and orders_db[order_id]["status"] != "CANCELLED":
+        orders_db[order_id]["status"] = "SHIPPING"
+        orders_db[order_id]["updated_at"] = datetime.now().isoformat()
+        await notify_user_service(order_id, "SHIPPING")
     
-    total_time = processing_time + preparing_time + shipping_time
+    # Случайная задержка от 1 до 5 минут (для тестирования используем секунды)
+    delivery_time = random.randint(60, 300)
+    await asyncio.sleep(delivery_time)  # Имитация задержки
     
-    # Устанавливаем ожидаемое время доставки
-    order.estimated_delivery = datetime.now() + timedelta(seconds=total_time)
-    orders_db[order_id] = order
-    
-    # Статус "processing"
-    await asyncio.sleep(processing_time)
-    if order_id not in orders_db or orders_db[order_id].status == "cancelled":
-        return
-    
-    order = orders_db[order_id]
-    order.status = "processing"
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
-    
-    # Статус "preparing"
-    await asyncio.sleep(preparing_time)
-    if order_id not in orders_db or orders_db[order_id].status == "cancelled":
-        return
-    
-    order = orders_db[order_id]
-    order.status = "preparing"
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
-    
-    # Статус "shipping"
-    await asyncio.sleep(shipping_time)
-    if order_id not in orders_db or orders_db[order_id].status == "cancelled":
-        return
-    
-    order = orders_db[order_id]
-    order.status = "shipping"
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
-    
-    # Статус "delivered"
-    await asyncio.sleep(10)  # Небольшая задержка для демонстрации
-    if order_id not in orders_db or orders_db[order_id].status == "cancelled":
-        return
-    
-    order = orders_db[order_id]
-    order.status = "delivered"
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
-    
-    # Удаление заказа через некоторое время после доставки
-    await asyncio.sleep(60)  # 1 минута для демонстрации
-    if order_id in orders_db and orders_db[order_id].status == "delivered":
+    # Изменение статуса на "Доставлен"
+    if order_id in orders_db and orders_db[order_id]["status"] != "CANCELLED":
+        orders_db[order_id]["status"] = "DELIVERED"
+        orders_db[order_id]["updated_at"] = datetime.now().isoformat()
+        await notify_user_service(order_id, "DELIVERED")
+        
+        # Удаление заказа через 5 минут после доставки
+        background_tasks.add_task(delete_order_after_delay, order_id, 300)
+
+async def delete_order_after_delay(order_id: str, delay: int):
+    """Удаление заказа после указанной задержки"""
+    await asyncio.sleep(delay)
+    if order_id in orders_db:
         del orders_db[order_id]
 
-# Функция для уведомления сервиса пользователей об изменениях в заказе
-async def notify_user_service(order_id: UUID, user_id: str):
-    # В реальном приложении здесь был бы запрос к сервису пользователей
-    # для обновления информации о заказе пользователя
+async def notify_user_service(order_id: str, status: str):
+    """Уведомление сервиса пользователей об изменении статуса заказа"""
+    if order_id not in orders_db:
+        return
+    
     try:
-        async with httpx.AsyncClient(base_url=f"http://{os.getenv('USER_SERVICE_HOST', 'user-service')}") as client:
+        order = orders_db[order_id]
+        async with httpx.AsyncClient() as client:
             await client.post(
-                f"/users/{user_id}/orders/{order_id}/update",
-                json={"order_id": str(order_id), "status": orders_db[order_id].status if order_id in orders_db else "unknown"}
+                f"{USER_SERVICE_URL}/users/notify/order-status",
+                json={
+                    "order_id": order_id,
+                    "user_id": order["user_id"],
+                    "status": status,
+                    "updated_at": order["updated_at"]
+                }
             )
-    except Exception:
-        # В случае ошибки просто логируем и продолжаем работу
+    except httpx.RequestError:
+        # Логирование ошибки (в реальном приложении)
         pass
 
-# Эндпоинты
+# Маршруты API
 @app.get("/")
 async def root():
     return {"message": "Order Service API"}
 
-@app.post("/orders/", response_model=Order, status_code=201)
-async def create_order(order_data: OrderCreate, request: Request, background_tasks: BackgroundTasks):
-    """Создание нового заказа"""
-    user_id = get_user_id(request)
-    
-    # Проверяем, что user_id в запросе совпадает с заголовком
-    if order_data.user_id != user_id and not is_admin(request):
-        raise HTTPException(status_code=403, detail="Cannot create order for another user")
-    
-    # Создаем заказ
-    order = Order(
-        user_id=order_data.user_id,
-        items=order_data.items,
-        total_price=order_data.total_price
-    )
-    
-    orders_db[order.id] = order
-    
-    # Запускаем процесс обработки заказа в фоне
-    background_tasks.add_task(process_order, order.id)
-    
-    # Уведомляем сервис пользователей о новом заказе
-    background_tasks.add_task(notify_user_service, order.id, user_id)
-    
-    return order
-
 @app.get("/orders/", response_model=List[Order])
-async def list_orders(request: Request, skip: int = 0, limit: int = 100):
+async def get_orders(user_id: str = Depends(get_user_id), admin: Optional[bool] = Header(False)):
     """Получение списка заказов пользователя или всех заказов для админа"""
-    user_id = get_user_id(request)
-    
-    if is_admin(request):
+    if admin:
         # Для администратора возвращаем все заказы
-        return list(orders_db.values())[skip:skip+limit]
-    else:
-        # Для обычного пользователя возвращаем только его заказы
-        user_orders = [order for order in orders_db.values() if order.user_id == user_id]
-        return user_orders[skip:skip+limit]
+        return [order for order in orders_db.values()]
+    
+    # Для обычного пользователя возвращаем только его заказы
+    return [order for order in orders_db.values() if order["user_id"] == user_id]
+
+@app.post("/orders/", response_model=Order)
+async def create_order(
+    order: OrderCreate, 
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_user_id)
+):
+    """Создание нового заказа"""
+    order_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    
+    # Извлекаем username из JWT токена, если это токен
+    try:
+        if user_id.count('.') == 2:  # Простая проверка, что это может быть JWT
+            payload = jwt.decode(user_id, SECRET_KEY, algorithms=[ALGORITHM])
+            username = payload.get("sub")
+            if username:
+                user_id = username
+    except Exception:
+        # Если не удалось декодировать, используем user_id как есть
+        pass
+    
+    new_order = {
+        "id": order_id,
+        "user_id": user_id,
+        "items": [dict(item) for item in order.items],
+        "total": order.total,
+        "status": "CREATED",
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    orders_db[order_id] = new_order
+    
+    # Запускаем фоновую задачу для обработки заказа
+    background_tasks.add_task(process_order, order_id, background_tasks)
+    
+    return new_order
 
 @app.get("/orders/{order_id}", response_model=Order)
-async def get_order(order_id: UUID, request: Request):
-    """Получение информации о конкретном заказе"""
-    user_id = get_user_id(request)
-    
+async def get_order(order_id: str, user_id: str = Depends(get_user_id), admin: Optional[bool] = Header(False)):
+    """Получение информации о заказе"""
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
     
     order = orders_db[order_id]
     
-    # Проверяем, что пользователь имеет доступ к заказу
-    if order.user_id != user_id and not is_admin(request):
+    # Проверяем права доступа
+    if order["user_id"] != user_id and not admin:
         raise HTTPException(status_code=403, detail="Access denied")
     
     return order
 
 @app.put("/orders/{order_id}/status")
-async def update_order_status(order_id: UUID, status: str, request: Request, background_tasks: BackgroundTasks):
+async def update_order_status(
+    order_id: str, 
+    status: str, 
+    background_tasks: BackgroundTasks,
+    admin: Optional[bool] = Header(False)
+):
     """Обновление статуса заказа (только для администраторов)"""
-    if not is_admin(request):
+    if not admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
     
     if status not in ORDER_STATUSES:
-        raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {', '.join(ORDER_STATUSES)}")
+        raise HTTPException(status_code=400, detail=f"Invalid status. Available statuses: {', '.join(ORDER_STATUSES.keys())}")
     
-    order = orders_db[order_id]
-    order.status = status
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
+    orders_db[order_id]["status"] = status
+    orders_db[order_id]["updated_at"] = datetime.now().isoformat()
     
-    # Уведомляем сервис пользователей об изменении статуса заказа
-    background_tasks.add_task(notify_user_service, order_id, order.user_id)
+    # Уведомляем сервис пользователей об изменении статуса
+    background_tasks.add_task(notify_user_service, order_id, status)
     
     return {"message": f"Order status updated to {status}"}
 
 @app.put("/orders/{order_id}/cancel")
-async def cancel_order(order_id: UUID, request: Request, background_tasks: BackgroundTasks):
+async def cancel_order(order_id: str, user_id: str = Depends(get_user_id), admin: Optional[bool] = Header(False)):
     """Отмена заказа"""
-    user_id = get_user_id(request)
-    
     if order_id not in orders_db:
         raise HTTPException(status_code=404, detail="Order not found")
     
     order = orders_db[order_id]
     
-    # Проверяем, что пользователь имеет доступ к заказу
-    if order.user_id != user_id and not is_admin(request):
+    # Проверяем права доступа
+    if order["user_id"] != user_id and not admin:
         raise HTTPException(status_code=403, detail="Access denied")
     
-    # Проверяем, что заказ можно отменить
-    if order.status in ["delivered", "cancelled"]:
-        raise HTTPException(status_code=400, detail=f"Cannot cancel order with status {order.status}")
+    # Проверяем, можно ли отменить заказ
+    if order["status"] in ["DELIVERED", "CANCELLED"]:
+        raise HTTPException(status_code=400, detail=f"Cannot cancel order with status {order['status']}")
     
-    order.status = "cancelled"
-    order.updated_at = datetime.now()
-    orders_db[order_id] = order
+    # Обновляем статус заказа
+    order["status"] = "CANCELLED"
+    order["updated_at"] = datetime.now().isoformat()
     
     # Уведомляем сервис пользователей об отмене заказа
-    background_tasks.add_task(notify_user_service, order_id, user_id)
+    asyncio.create_task(notify_user_service(order_id, "CANCELLED"))
     
-    return {"message": "Order cancelled"}
+    return {"message": "Order cancelled", "order": order}
 
 @app.get("/orders/statuses/list")
 async def get_order_statuses():
     """Получение списка возможных статусов заказа"""
-    return {"statuses": ORDER_STATUSES} 
+    return ORDER_STATUSES 

@@ -1,265 +1,230 @@
 import os
 import httpx
-from fastapi import FastAPI, HTTPException, Depends, Request, Query, Header
-from pydantic import BaseModel, Field
-from typing import List, Dict, Optional
-from uuid import UUID, uuid4
-from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
+from pydantic import BaseModel, UUID4
+import uuid
+from typing import List, Optional, Dict, Any
+
+# Настройки
+BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
+ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:8002")
+
+# In-memory хранилище корзин
+carts_db: Dict[str, Dict[str, Any]] = {}
 
 # Модели данных
-class CartItem(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
-    product_id: UUID
-    quantity: int
-    price: float
-    product_name: str
-
 class CartItemCreate(BaseModel):
-    product_id: UUID
+    product_id: UUID4
     quantity: int
 
 class CartItemUpdate(BaseModel):
     quantity: int
 
+class CartItem(BaseModel):
+    id: UUID4
+    product_id: UUID4
+    name: str
+    price: float
+    quantity: int
+    total_price: float
+
 class Cart(BaseModel):
-    id: UUID = Field(default_factory=uuid4)
-    user_id: str
-    items: List[CartItem] = []
-    total_price: float = 0.0
-
-# Хранилище корзин (в памяти для примера)
-# Структура: {user_id: Cart}
-carts_db: Dict[str, Cart] = {}
-
-# Создание приложения FastAPI
-app = FastAPI(
-    title="Cart Service API",
-    description="Сервис для управления корзиной товаров",
-    version="0.1.0",
-)
+    items: List[CartItem]
+    total: float
 
 # Вспомогательные функции
-def get_user_id(request: Request) -> str:
-    # В реальном приложении здесь была бы аутентификация
-    # Для примера используем заголовок X-User-ID
-    user_id = request.headers.get("X-User-ID", "anonymous")
-    return user_id
+async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)) -> str:
+    """Получение идентификатора пользователя из заголовка Authorization или X-User-ID"""
+    if x_user_id:
+        return x_user_id
+    
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
+    
+    # Извлекаем user_id из токена
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    # Возвращаем subject из токена как user_id
+    # В реальном приложении здесь должна быть декодирование JWT
+    return parts[1]  # Используем токен как идентификатор пользователя
 
-def is_admin(request: Request) -> bool:
-    # В реальном приложении здесь была бы проверка прав администратора
-    # Для примера используем заголовок X-Admin
-    return request.headers.get("X-Admin") == "true"
+async def get_product_info(product_id: UUID4) -> dict:
+    """Получение информации о товаре из бэкенд-сервиса"""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{BACKEND_URL}/products/{product_id}")
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Product service unavailable")
+            return response.json()
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail="Product service unavailable")
 
-async def get_product_api_client():
-    async with httpx.AsyncClient(base_url=f"http://{os.getenv('BACKEND_HOST', 'backend')}/api") as client:
-        yield client
-
-# Получение или создание корзины для пользователя
-def get_or_create_cart(user_id: str) -> Cart:
+def get_user_cart(user_id: str) -> dict:
+    """Получение корзины пользователя или создание новой"""
     if user_id not in carts_db:
-        carts_db[user_id] = Cart(user_id=user_id)
+        carts_db[user_id] = {"items": {}}
     return carts_db[user_id]
 
-# Проверка авторизации (опционально)
-async def verify_token(x_token: Optional[str] = Header(None)):
-    if x_token is None:
-        return None
-    # В реальном приложении здесь была бы проверка токена через сервис пользователей
-    return x_token
+def calculate_cart_total(cart: dict) -> float:
+    """Расчет общей стоимости корзины"""
+    return sum(item["total_price"] for item in cart["items"].values())
 
-# Эндпоинты
+# Создание приложения FastAPI
+app = FastAPI()
+
+# Маршруты API
 @app.get("/")
 async def root():
     return {"message": "Cart Service API"}
 
 @app.get("/cart/", response_model=Cart)
-async def get_cart(request: Request):
+async def get_cart(user_id: str = Depends(get_user_id)):
     """Получение текущей корзины пользователя"""
-    user_id = get_user_id(request)
-    return get_or_create_cart(user_id)
+    cart = get_user_cart(user_id)
+    items = list(cart["items"].values())
+    total = calculate_cart_total(cart)
+    return {"items": items, "total": total}
 
-@app.post("/cart/items", response_model=Cart)
-async def add_item_to_cart(
-    item: CartItemCreate, 
-    request: Request, 
-    product_api: httpx.AsyncClient = Depends(get_product_api_client)
-):
+@app.post("/cart/items", response_model=CartItem)
+async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id)):
     """Добавление товара в корзину"""
-    user_id = get_user_id(request)
-    cart = get_or_create_cart(user_id)
+    # Получаем информацию о товаре
+    product = await get_product_info(item.product_id)
     
-    # Проверяем наличие товара и его количество
-    try:
-        response = await product_api.get(f"/products/{item.product_id}")
-        if response.status_code != 200:
-            raise HTTPException(status_code=404, detail=f"Product {item.product_id} not found")
-        
-        product = response.json()
-        if product["quantity"] < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Not enough quantity for product {item.product_id}")
-        
-        # Проверяем, есть ли уже такой товар в корзине
-        for cart_item in cart.items:
-            if str(cart_item.product_id) == str(item.product_id):
-                # Обновляем количество существующего товара
-                cart_item.quantity += item.quantity
-                # Пересчитываем общую стоимость корзины
-                cart.total_price = sum(float(item.price) * item.quantity for item in cart.items)
-                return cart
-        
-        # Добавляем новый товар в корзину
-        cart_item = CartItem(
-            product_id=item.product_id,
-            quantity=item.quantity,
-            price=float(product["price"]),
-            product_name=product["name"]
-        )
-        cart.items.append(cart_item)
-        
-        # Пересчитываем общую стоимость корзины
-        cart.total_price = sum(float(item.price) * item.quantity for item in cart.items)
-        
-        return cart
+    # Проверяем наличие товара
+    if product["quantity"] < item.quantity:
+        raise HTTPException(status_code=400, detail="Not enough items in stock")
     
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Product service unavailable")
+    # Добавляем товар в корзину
+    cart = get_user_cart(user_id)
+    item_id = str(uuid.uuid4())
+    price = float(product["price"])
+    total_price = price * item.quantity
+    
+    cart["items"][item_id] = {
+        "id": item_id,
+        "product_id": str(item.product_id),
+        "name": product["name"],
+        "price": price,
+        "quantity": item.quantity,
+        "total_price": total_price
+    }
+    
+    return cart["items"][item_id]
 
-@app.put("/cart/items/{item_id}", response_model=Cart)
-async def update_cart_item(
-    item_id: UUID, 
-    item_update: CartItemUpdate, 
-    request: Request,
-    product_api: httpx.AsyncClient = Depends(get_product_api_client)
-):
+@app.put("/cart/items/{item_id}", response_model=CartItem)
+async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id: str = Depends(get_user_id)):
     """Изменение количества товара в корзине"""
-    user_id = get_user_id(request)
+    cart = get_user_cart(user_id)
     
-    if user_id not in carts_db:
-        raise HTTPException(status_code=404, detail="Cart not found")
+    # Проверяем наличие товара в корзине
+    if str(item_id) not in cart["items"]:
+        raise HTTPException(status_code=404, detail="Item not found in cart")
     
-    cart = carts_db[user_id]
+    # Получаем текущий товар из корзины
+    cart_item = cart["items"][str(item_id)]
     
-    # Находим товар в корзине
-    for cart_item in cart.items:
-        if cart_item.id == item_id:
-            # Проверяем наличие товара в нужном количестве
-            try:
-                response = await product_api.get(f"/products/{cart_item.product_id}")
-                if response.status_code != 200:
-                    raise HTTPException(status_code=404, detail=f"Product {cart_item.product_id} not found")
-                
-                product = response.json()
-                if product["quantity"] < item_update.quantity:
-                    raise HTTPException(status_code=400, detail=f"Not enough quantity for product {cart_item.product_id}")
-                
-                # Обновляем количество товара
-                cart_item.quantity = item_update.quantity
-                
-                # Пересчитываем общую стоимость корзины
-                cart.total_price = sum(float(item.price) * item.quantity for item in cart.items)
-                
-                return cart
-            
-            except httpx.RequestError:
-                raise HTTPException(status_code=503, detail="Product service unavailable")
+    # Получаем информацию о товаре для проверки наличия
+    product = await get_product_info(UUID4(cart_item["product_id"]))
     
-    raise HTTPException(status_code=404, detail="Item not found in cart")
+    # Проверяем наличие товара
+    if product["quantity"] < item_update.quantity:
+        raise HTTPException(status_code=400, detail="Not enough items in stock")
+    
+    # Обновляем количество и стоимость
+    cart_item["quantity"] = item_update.quantity
+    cart_item["total_price"] = float(product["price"]) * item_update.quantity
+    
+    return cart_item
 
-@app.delete("/cart/items/{item_id}", response_model=Cart)
-async def remove_cart_item(item_id: UUID, request: Request):
+@app.delete("/cart/items/{item_id}")
+async def remove_from_cart(item_id: UUID4, user_id: str = Depends(get_user_id)):
     """Удаление товара из корзины"""
-    user_id = get_user_id(request)
+    cart = get_user_cart(user_id)
     
-    if user_id not in carts_db:
-        raise HTTPException(status_code=404, detail="Cart not found")
+    # Проверяем наличие товара в корзине
+    if str(item_id) not in cart["items"]:
+        raise HTTPException(status_code=404, detail="Item not found in cart")
     
-    cart = carts_db[user_id]
+    # Удаляем товар из корзины
+    del cart["items"][str(item_id)]
     
-    # Находим и удаляем товар из корзины
-    for i, cart_item in enumerate(cart.items):
-        if cart_item.id == item_id:
-            cart.items.pop(i)
-            
-            # Пересчитываем общую стоимость корзины
-            cart.total_price = sum(float(item.price) * item.quantity for item in cart.items)
-            
-            return cart
-    
-    raise HTTPException(status_code=404, detail="Item not found in cart")
+    return {"message": "Item removed from cart"}
 
 @app.get("/cart/total")
-async def get_cart_total(request: Request):
+async def get_cart_total(user_id: str = Depends(get_user_id)):
     """Получение общей стоимости корзины"""
-    user_id = get_user_id(request)
-    cart = get_or_create_cart(user_id)
-    
-    return {"total_price": cart.total_price}
+    cart = get_user_cart(user_id)
+    total = calculate_cart_total(cart)
+    return {"total": total}
 
 @app.post("/cart/checkout")
-async def checkout_cart(
-    request: Request, 
-    order_api: httpx.AsyncClient = Depends(lambda: httpx.AsyncClient(base_url=f"http://{os.getenv('ORDER_SERVICE_HOST', 'order-service')}"))
-):
+async def checkout(background_tasks: BackgroundTasks, authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)):
     """Оформление заказа из корзины"""
-    user_id = get_user_id(request)
+    # Получаем user_id
+    user_id = await get_user_id(authorization, x_user_id)
     
-    if user_id not in carts_db or not carts_db[user_id].items:
+    cart = get_user_cart(user_id)
+    
+    # Проверяем, что корзина не пуста
+    if not cart["items"]:
         raise HTTPException(status_code=400, detail="Cart is empty")
     
-    cart = carts_db[user_id]
-    
-    # Отправляем запрос в сервис заказов
+    # Создаем заказ
     try:
-        # Передаем заголовок X-User-ID для идентификации пользователя
-        headers = {"X-User-ID": user_id}
-        if "X-Token" in request.headers:
-            headers["X-Token"] = request.headers["X-Token"]
-        
-        response = await order_api.post(
-            "/orders/",
-            json={
-                "user_id": user_id,
-                "items": [
-                    {
-                        "product_id": str(item.product_id),
-                        "quantity": item.quantity,
-                        "price": item.price,
-                        "product_name": item.product_name
-                    } for item in cart.items
-                ],
-                "total_price": cart.total_price
-            },
-            headers=headers
-        )
-        
-        if response.status_code != 201:
-            raise HTTPException(status_code=response.status_code, detail="Failed to create order")
-        
-        # Очищаем корзину
-        cart.items = []
-        cart.total_price = 0.0
-        
-        return response.json()
-    
+        async with httpx.AsyncClient() as client:
+            # Подготавливаем данные для заказа
+            order_items = []
+            for item in cart["items"].values():
+                order_items.append({
+                    "product_id": item["product_id"],
+                    "name": item["name"],
+                    "price": item["price"],
+                    "quantity": item["quantity"]
+                })
+            
+            # Отправляем запрос на создание заказа
+            headers = {"X-User-ID": user_id}
+            
+            # Если есть заголовок Authorization, передаем его
+            if authorization:
+                headers["Authorization"] = authorization
+            
+            order_data = {
+                "items": order_items,
+                "total": calculate_cart_total(cart)
+            }
+            
+            response = await client.post(
+                f"{ORDER_SERVICE_URL}/orders/",
+                json=order_data,
+                headers=headers
+            )
+            
+            if response.status_code != 200:
+                raise HTTPException(status_code=503, detail="Order service unavailable")
+            
+            # Очищаем корзину после успешного оформления заказа
+            cart["items"] = {}
+            
+            return response.json()
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Order service unavailable")
 
 @app.delete("/cart/")
-async def clear_cart(request: Request):
+async def clear_cart(user_id: str = Depends(get_user_id)):
     """Очистка корзины"""
-    user_id = get_user_id(request)
-    
-    if user_id in carts_db:
-        cart = carts_db[user_id]
-        cart.items = []
-        cart.total_price = 0.0
-    
+    cart = get_user_cart(user_id)
+    cart["items"] = {}
     return {"message": "Cart cleared"}
 
-@app.get("/carts/", response_model=List[Cart])
-async def get_all_carts(request: Request, skip: int = 0, limit: int = 100):
+# Административные маршруты
+@app.get("/carts/")
+async def get_all_carts(admin: Optional[bool] = Header(False)):
     """Получение всех корзин (только для администраторов)"""
-    if not is_admin(request):
+    if not admin:
         raise HTTPException(status_code=403, detail="Admin access required")
     
-    return list(carts_db.values())[skip:skip+limit] 
+    return carts_db 

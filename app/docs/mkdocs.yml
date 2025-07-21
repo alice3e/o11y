@@ -9,6 +9,10 @@ site_author: KIT Student
 nav:
   - Главная: index.md
   - Архитектура: architecture.md
+  - Микросервисы: microservices.md
+  - Аутентификация: authentication.md
+  - Тестирование: testing.md
+  - База данных: database.md
   - API: api_docs.md
   - План работ: future_plans.md
   - Воспроизведение алертов: reproduce_alerts.md
