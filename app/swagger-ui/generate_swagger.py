@@ -133,7 +133,7 @@ def merge_specs():
                         elif service_name not in operation['tags']:
                             operation['tags'].insert(0, service_name)
                         
-                        # Добавляем информацию о требованиях авторизации
+                            # Добавляем информацию о требованиях авторизации
                         if "security" not in operation:
                             # Проверяем, есть ли в параметрах Header "Authorization" или есть ли ссылка на зависимость авторизации
                             requires_auth = False
@@ -165,8 +165,20 @@ def merge_specs():
                                     security_schemes.append({"adminAuth": []})
                                 security_schemes.append({"bearerAuth": []})
                                 operation["security"] = security_schemes
-                    
-                    # Добавляем операцию в объединенную спецификацию
+                        else:
+                            # Заменяем существующие схемы безопасности на наши унифицированные
+                            new_security = []
+                            for security_req in operation["security"]:
+                                for scheme_name, scopes in security_req.items():
+                                    # Заменяем OAuth2PasswordBearer и подобные на bearerAuth
+                                    if "oauth2" in scheme_name.lower() or "bearer" in scheme_name.lower() or "jwt" in scheme_name.lower():
+                                        new_security.append({"bearerAuth": scopes})
+                                    elif "api" in scheme_name.lower() and "key" in scheme_name.lower():
+                                        new_security.append({"adminAuth": scopes})
+                                    else:
+                                        # Оставляем как есть, если не можем определить
+                                        new_security.append({scheme_name: scopes})
+                            operation["security"] = new_security                    # Добавляем операцию в объединенную спецификацию
                     merged_spec['paths'][prefixed_path] = path_item
                 
                 # Объединяем компоненты
