@@ -15,6 +15,7 @@
       }
     ]
   },
+  "description": "Monitors the key RED metrics (Rate, Errors, Duration) for the User Service. Technical endpoints like /health and /metrics are filtered out to show only business-relevant data.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
@@ -34,7 +35,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -72,7 +74,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -85,12 +88,21 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\"}[5m]))) * 100",
-          "legendFormat": "5xx Errors",
+          "expr": "(sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\", status=~\"5..\"}[5m])) by (handler) / sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\"}[5m])) by (handler)) * 100",
+          "legendFormat": "{{handler}} 5xx",
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\", status=~\"4..\"}[5m])) by (handler) / sum(rate(http_requests_total{job=\"user-service\", handler=~\"$handler\"}[5m])) by (handler)) * 100",
+          "legendFormat": "{{handler}} 4xx",
+          "refId": "B"
         }
       ],
-      "title": "Error Rate (5xx)",
+      "title": "Error Rate (4xx & 5xx)",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
@@ -112,7 +124,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -125,12 +138,12 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"user-service\"}[5m])) by (le))",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"user-service\", handler!~\"/health|/metrics|/docs|/openapi.json\"}[5m])) by (le))",
           "legendFormat": "Overall p99",
           "refId": "A"
         }
       ],
-      "title": "Overall P99 Latency",
+      "title": "Overall P99 Latency (Business Endpoints)",
       "type": "timeseries",
       "fieldConfig": {
         "defaults": {
@@ -150,7 +163,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -188,7 +202,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -226,7 +241,8 @@
         "legend": {
           "calcs": [],
           "displayMode": "list",
-          "placement": "bottom"
+          "placement": "bottom",
+          "showLegend": true
         },
         "tooltip": {
           "mode": "multi",
@@ -289,37 +305,40 @@
       "type": "stat"
     }
   ],
-  "refresh": "",
+  "refresh": "10s",
   "schemaVersion": 38,
   "style": "dark",
   "tags": [],
   "templating": {
     "list": [
       {
-        "current": {},
+        "current": {
+          "selected": true,
+          "text": "All",
+          "value": "$__all"
+        },
         "datasource": {
           "type": "prometheus",
-          "uid": "prometheus"
+          "uid": "${DS_PROMETHEUS}"
         },
-        "definition": "label_values(http_requests_total{job=\"user-service\"}, handler)",
+        "definition": "label_values(http_requests_total{job=\"user-service\", handler!~\"/health|/metrics|/docs|/openapi.json\"}, handler)",
         "hide": 0,
         "includeAll": true,
         "multi": true,
         "name": "handler",
         "options": [],
-        "query": "label_values(http_requests_total{job=\"user-service\"}, handler)",
-        "refresh": 1,
+        "query": "label_values(http_requests_total{job=\"user-service\", handler!~\"/health|/metrics|/docs|/openapi.json\"}, handler)",
+        "refresh": 2,
         "regex": "",
         "skipUrlSync": false,
         "sort": 1,
         "type": "query"
       },
       {
-        "name": "DS_PROMETHEUS",
-        "type": "datasource",
-        "query": "prometheus",
         "hide": 2,
-        "label": "Datasource"
+        "name": "DS_PROMETHEUS",
+        "query": "prometheus",
+        "type": "datasource"
       }
     ]
   },
@@ -330,7 +349,7 @@
   "timepicker": {},
   "timezone": "",
   "title": "User Service Overview",
-  "uid": "c1f7256e-1d57-4171-84e1-209804e30b65",
+  "uid": "userservice-main-1",
   "version": 1,
   "weekStart": ""
 }
