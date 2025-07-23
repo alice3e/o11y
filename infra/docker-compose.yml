@@ -153,7 +153,7 @@ services:
       - ./locust:/mnt/locust
     networks:
       - product-store-net
-    command: locust -f /mnt/locust/locustfile.py --web-host=0.0.0.0 --web-port=8089
+    command: -f /mnt/locust/locustfile.py
 
   # Nginx для маршрутизации запросов
   nginx:
