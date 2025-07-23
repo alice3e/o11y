@@ -5,10 +5,8 @@ global:
   evaluation_interval: 10s
 
 # -------------------------------------------------
-# 2. ПРАВИЛА АЛЕРТИНГА
+# ПРАВИЛА АЛЕРТИНГА (Пока не используются)
 # -------------------------------------------------
-# Сюда можно добавлять файлы с правилами для Alertmanager.
-# Пока оставим этот блок пустым или закомментированным.
 # alerting:
 #   alertmanagers:
 #   - static_configs:
@@ -19,45 +17,33 @@ global:
 #   - "alert.rules.yml"
 
 # -------------------------------------------------
-# 3. КОНФИГУРАЦИЯ СБОРА МЕТРИК
+# КОНФИГУРАЦИЯ СБОРА МЕТРИК
 # -------------------------------------------------
-
 scrape_configs:
 
+  # --- РАБОТА №1: Сбор метрик с самого Prometheus ---
   - job_name: 'prometheus'
     static_configs:
-      # 'localhost:9090' - это адрес внутри контейнера Prometheus.
       - targets: ['localhost:9090']
 
+  # --- РАБОТА №2: Сбор метрик с Nginx ---
   - job_name: 'nginx'
-
-    # metrics_path: Путь, по которому нужно запрашивать метрики.
     metrics_path: /metrics
-
-    # scheme: Протокол для запроса (http или https). По умолчанию http.
     scheme: http
-
-    # static_configs: Самый простой способ указать цели для сбора.
-    # Это статический, жестко заданный список хостов.
     static_configs:
-      # targets: Список адресов в формате <хост>:<порт>.
       - targets: ['nginx-exporter:9113']
-
         labels:
           instance: 'nginx-main'
           env: 'development'
 
+  # --- РАБОТА №3: Сбор метрик с Cassandra (MCAC Agent) ---
   - job_name: "cassandra-mcac"
     scrape_interval: 15s
     scrape_timeout:  15s
     honor_labels: true 
-
-    # --- ЗАМЕНЯЕМ FILE SERVICE DISCOVERY НА СТАТИЧЕСКУЮ КОНФИГУРАЦИЮ ---
-    # Это проще и надежнее для Docker Compose.
     static_configs:
       - targets: ['cassandra:9103']
         labels:
-          # Можно добавить свои метки, если нужно
           env: 'development'
 
     metric_relabel_configs:
@@ -298,11 +284,25 @@ scrape_configs:
         regex: jvm\.buffers\.(\w+)\.(\w+)
         target_label: __name__
         replacement: mcac_jvm_buffer_${2}
-      #Append the prom types back to formatted names
+
+      # --- ИСПРАВЛЕННЫЕ ПРАВИЛА В КОНЦЕ ---
+
+      # ПРАВИЛО А: Для стандартных суффиксов Prometheus (sum, count, bucket)
       - source_labels: [__name__, "prom_name"]
-        regex: (mcac_.*);.*(_micros_bucket|_bucket|_micros_count_total|_count_total|_total|_micros_sum|_sum|_stddev).*
+        regex: (mcac_.*);.*(_micros_bucket|_bucket|_micros_count_total|_count_total|_total|_micros_sum|_sum).*
         separator: ;
         target_label: __name__
         replacement: ${1}${2}
+      
+      # ПРАВИЛО Б: Специально для квантилей и других агрегатов Summary от MCAC
+      - source_labels: [__name__, "prom_name"]
+        # Мы ищем суффиксы _pXX, _min, _max, _mean, _stddev
+        regex: (mcac_.*);.*_histogram_(p\d+|min|max|mean|stddev).*
+        separator: ;
+        target_label: __name__
+        # Имя метрики остается базовым, без суффикса, т.к. квантиль уже вынесен в отдельную метку
+        replacement: ${1}
+
+      # ПРАВИЛО В: Удаляем временную метку
       - regex: prom_name
         action: labeldrop
