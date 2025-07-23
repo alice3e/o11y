@@ -80,11 +80,24 @@ main() {
         fi
     done
     
-    # 2. Тестирование нового API категорий
+    # 2. Тестирование получения категорий товаров
     print_header "Тестирование API категорий"
     
-    local categories_response=$(curl -s -X GET "${BASE_URL}/api/products/categories/list")
+    # Проверим, что API категорий работает (если реализован)
+    local categories_response=$(curl -s -X GET "${BASE_URL}/api/products/categories")
     echo "Список категорий: $categories_response"
+    
+    # Альтернативно, получим категории из списка товаров администратором
+    echo -e "\nПолучаем категории через список товаров:"
+    local admin_products=$(curl -s -X GET "${BASE_URL}/api/products/" \
+        -H "Authorization: Bearer swagger_admin" \
+        --user "swagger_admin:admin123" || \
+        curl -s -X POST "${BASE_URL}/user-api/token" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "username=swagger_admin&password=admin123" | \
+        jq -r '.access_token' | xargs -I {} curl -s -X GET "${BASE_URL}/api/products/" \
+        -H "Authorization: Bearer {}")
+    echo "Товары для анализа категорий: $admin_products"
     
     # 3. Регистрация нового пользователя
     print_header "Регистрация нового пользователя"
@@ -97,8 +110,8 @@ main() {
     local register_data="{\"username\":\"$username\",\"full_name\":\"Test User\",\"phone\":\"+7 (999) 123-45-67\",\"password\":\"$password\"}"
     http_request "POST" "${BASE_URL}/user-api/users/register" "Content-Type: application/json" "$register_data"
     
-    # 4. Получение токена
-    print_header "Получение токена"
+    # 4. Получение токена обычного пользователя
+    print_header "Получение токена обычного пользователя"
     
     local auth_data="username=$username&password=$password"
     local auth_response=$(curl -s -X POST "${BASE_URL}/user-api/token" \
@@ -111,10 +124,30 @@ main() {
     local token=$(echo "$auth_response" | grep -o '"access_token":"[^"]*' | sed 's/"access_token":"//;s/".*//')
     
     if [ -z "$token" ]; then
-        echo -e "${RED}✗ Не удалось получить токен${NC}"
+        echo -e "${RED}✗ Не удалось получить токен пользователя${NC}"
         exit 1
     else
-        echo -e "${GREEN}✓ Получен токен: $token${NC}"
+        echo -e "${GREEN}✓ Получен токен пользователя: ${token:0:20}...${NC}"
+    fi
+
+    # 4.1. Получение токена администратора для операций с товарами
+    print_header "Получение токена администратора"
+    
+    local admin_auth_data="username=swagger_admin&password=admin123"
+    local admin_auth_response=$(curl -s -X POST "${BASE_URL}/user-api/token" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        -d "$admin_auth_data")
+    
+    echo "Ответ аутентификации администратора: $admin_auth_response"
+    
+    # Извлекаем токен администратора
+    local admin_token=$(echo "$admin_auth_response" | grep -o '"access_token":"[^"]*' | sed 's/"access_token":"//;s/".*//')
+    
+    if [ -z "$admin_token" ]; then
+        echo -e "${RED}✗ Не удалось получить токен администратора${NC}"
+        exit 1
+    else
+        echo -e "${GREEN}✓ Получен токен администратора: ${admin_token:0:20}...${NC}"
     fi
     
     # 5. Получение профиля пользователя
@@ -125,12 +158,13 @@ main() {
     
     echo "Профиль пользователя: $profile_response"
     
-    # 6. Добавление товара
+    # 6. Добавление товара (требуются права администратора)
     print_header "Добавление товара в базу данных"
     
     local product_data="{\"name\":\"Тестовый товар\",\"category\":\"Тесты\",\"price\":100.50,\"stock_count\":50}"
     local product_response=$(curl -s -X POST "${BASE_URL}/api/products/" \
         -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $admin_token" \
         -d "$product_data")
     
     echo "Ответ добавления товара: $product_response"
@@ -140,17 +174,40 @@ main() {
     
     if [ -z "$product_id" ]; then
         echo -e "${RED}✗ Не удалось получить ID товара${NC}"
+        echo "Проверим ошибку в ответе:"
+        echo "$product_response" | jq . 2>/dev/null || echo "$product_response"
         exit 1
     else
         echo -e "${GREEN}✓ Получен ID товара: $product_id${NC}"
     fi
     
-    # 7. Тестирование получения товаров по категории с пагинацией
-    print_header "Тестирование получения товаров по категории"
+    # 7. Тестирование новой функциональности контроля доступа
+    print_header "Тестирование контроля доступа по ролям"
     
+    # 7.1. Администратор может получить все товары
+    echo "7.1. Администратор получает все товары:"
+    local admin_all_products=$(curl -s -X GET "${BASE_URL}/api/products/" \
+        -H "Authorization: Bearer $admin_token")
+    echo "Все товары (администратор): $admin_all_products"
+    
+    # 7.2. Обычный пользователь НЕ может получить все товары
+    echo -e "\n7.2. Обычный пользователь пытается получить все товары:"
+    local user_all_products=$(curl -s -X GET "${BASE_URL}/api/products/" \
+        -H "Authorization: Bearer $token")
+    echo "Ответ для обычного пользователя: $user_all_products"
+    
+    # 7.3. Обычный пользователь может получить товары по категории
+    echo -e "\n7.3. Обычный пользователь получает товары категории 'Тесты':"
     local category="Тесты"
-    local category_products_response=$(curl -s -X GET "${BASE_URL}/api/products/by-category/$category?skip=0&limit=10&sort_by=price&sort_order=desc")
-    echo "Товары в категории $category с сортировкой по цене (по убыванию): $category_products_response"
+    local encoded_category=$(printf '%s' "$category" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))")
+    local category_products_response=$(curl -s -X GET "${BASE_URL}/api/products/?category=$encoded_category" \
+        -H "Authorization: Bearer $token")
+    echo "Товары в категории $category: $category_products_response"
+    
+    # 7.4. Неавторизованный доступ к категории
+    echo -e "\n7.4. Неавторизованный доступ к товарам категории:"
+    local unauth_category_response=$(curl -s -X GET "${BASE_URL}/api/products/?category=$encoded_category")
+    echo "Товары без авторизации (категория $category): $unauth_category_response"
     
     # 8. Отмечаем просмотр товара
     print_header "Отмечаем просмотр товара"
@@ -283,7 +340,7 @@ main() {
         echo -e "${RED}✗ Сервер вернул код $not_found_response вместо 404${NC}"
     fi
 
-    # 22. Добавление нескольких товаров для тестирования фильтрации
+    # 22. Добавление нескольких товаров для тестирования фильтрации (требуются права администратора)
     print_header "Добавление тестовых товаров для фильтрации"
     
     # Создаем массив товаров с разными ценами
@@ -298,34 +355,57 @@ main() {
         echo "Добавление товара: $product_data"
         local product_response=$(curl -s -X POST "${BASE_URL}/api/products/" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer $admin_token" \
             -d "$product_data")
         echo "Ответ: $product_response"
     done
 
-    # 23. Тестирование фильтрации товаров по цене
-    print_header "Тестирование фильтрации товаров по цене"
+    # 23. Тестирование контроля доступа при фильтрации
+    print_header "Тестирование контроля доступа при фильтрации товаров"
     
-    local filtered_products_response=$(curl -s -X GET "${BASE_URL}/api/products/by-category/Молочные%20продукты?min_price=100&max_price=300")
-    echo "Товары с ценой от 100 до 300: $filtered_products_response"
+    echo "Обычный пользователь получает товары категории 'Молочные продукты':"
+    local milk_category="Молочные продукты"
+    local encoded_milk_category=$(printf '%s' "$milk_category" | python3 -c "import sys, urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))")
+    local user_filtered_response=$(curl -s -X GET "${BASE_URL}/api/products/?category=$encoded_milk_category" \
+        -H "Authorization: Bearer $token")
+    echo "Фильтрация обычным пользователем: $user_filtered_response"
+    # 24. Тестирование фильтрации (обновленный API)
+    print_header "Тестирование фильтрации товаров"
     
-    # 24. Тестирование сортировки товаров
-    print_header "Тестирование сортировки товаров"
+    # Создаем несколько товаров для тестирования
+    echo "Создаем товары для тестирования фильтрации..."
+    local milk_product_data="{\"name\":\"Молоко тестовое\",\"category\":\"Молочные продукты\",\"price\":250.00,\"stock_count\":30}"
+    curl -s -X POST "${BASE_URL}/api/products/" \
+        -H "Content-Type: application/json" \
+        -H "Authorization: Bearer $admin_token" \
+        -d "$milk_product_data" > /dev/null
     
-    local sorted_products_response=$(curl -s -X GET "${BASE_URL}/api/products?sort_by=price&sort_order=desc")
-    echo "Товары, отсортированные по цене (по убыванию): $sorted_products_response"
+    # Теперь фильтруем по категории "Молочные продукты"
+    local filtered_products_response=$(curl -s -X GET "${BASE_URL}/api/products/?category=$encoded_milk_category" \
+        -H "Authorization: Bearer $token")
+    echo "Товары категории 'Молочные продукты': $filtered_products_response"
     
-    # 25. Удаление тестовых товаров
+    # 25. Тестирование получения всех товаров администратором
+    print_header "Тестирование получения всех товаров администратором"
+    
+    local all_products_response=$(curl -s -X GET "${BASE_URL}/api/products" \
+        -H "Authorization: Bearer $admin_token")
+    echo "Все товары (администратор): $all_products_response"
+    
+    # 26. Удаление тестовых товаров (требуются права администратора)
     print_header "Удаление добавленных товаров"
     
-    # Получаем список всех товаров
-    local all_products_response=$(curl -s -X GET "${BASE_URL}/api/products")
+    # Получаем список всех товаров как администратор
+    local all_products_response=$(curl -s -X GET "${BASE_URL}/api/products" \
+        -H "Authorization: Bearer $admin_token")
     
-    # Извлекаем ID всех товаров в категории "Молочные продукты"
+    # Извлекаем ID всех товаров
     local product_ids=$(echo "$all_products_response" | grep -o '"product_id":"[^"]*' | sed 's/"product_id":"//;s/".*//')
     
     for id in $product_ids; do
         echo "Удаление товара с ID: $id"
-        local delete_product_response=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE "${BASE_URL}/api/products/$id")
+        local delete_product_response=$(curl -s -w "%{http_code}" -o /dev/null -X DELETE "${BASE_URL}/api/products/$id" \
+            -H "Authorization: Bearer $admin_token")
         echo "Код ответа: $delete_product_response"
     done
     
