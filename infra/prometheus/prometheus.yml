@@ -1,0 +1,48 @@
+# prometheus.yml
+
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+# -------------------------------------------------
+# 2. ПРАВИЛА АЛЕРТИНГА
+# -------------------------------------------------
+# Сюда можно добавлять файлы с правилами для Alertmanager.
+# Пока оставим этот блок пустым или закомментированным.
+# alerting:
+#   alertmanagers:
+#   - static_configs:
+#     - targets:
+#       # - alertmanager:9093
+
+# rule_files:
+#   - "alert.rules.yml"
+
+# -------------------------------------------------
+# 3. КОНФИГУРАЦИЯ СБОРА МЕТРИК
+# -------------------------------------------------
+
+scrape_configs:
+
+  - job_name: 'prometheus'
+    static_configs:
+      # 'localhost:9090' - это адрес внутри контейнера Prometheus.
+      - targets: ['localhost:9090']
+
+  - job_name: 'nginx'
+
+    # metrics_path: Путь, по которому нужно запрашивать метрики.
+    metrics_path: /metrics
+
+    # scheme: Протокол для запроса (http или https). По умолчанию http.
+    scheme: http
+
+    # static_configs: Самый простой способ указать цели для сбора.
+    # Это статический, жестко заданный список хостов.
+    static_configs:
+      # targets: Список адресов в формате <хост>:<порт>.
+      - targets: ['nginx-exporter:9113']
+
+        labels:
+          instance: 'nginx-main'
+          env: 'development'
