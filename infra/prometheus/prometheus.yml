@@ -21,12 +21,12 @@ global:
 # -------------------------------------------------
 scrape_configs:
 
-  # --- РАБОТА №1: Сбор метрик с самого Prometheus ---
+  # --- Сбор метрик с самого Prometheus ---
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
 
-  # --- РАБОТА №2: Сбор метрик с Nginx ---
+  # --- Сбор метрик с Nginx ---
   - job_name: 'nginx'
     metrics_path: /metrics
     scheme: http
@@ -36,7 +36,14 @@ scrape_configs:
           instance: 'nginx-main'
           env: 'development'
 
-  # --- РАБОТА №3: Сбор метрик с Cassandra (MCAC Agent) ---
+   # --- Сбор метрик с user-service ---
+  - job_name: 'user-service'
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ['user-service:8003']
+
+  # --- Сбор метрик с Cassandra (MCAC Agent) ---
   - job_name: "cassandra-mcac"
     scrape_interval: 15s
     scrape_timeout:  15s

@@ -17,3 +17,13 @@ providers:
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards/cassandra
+
+
+  - name: 'user-service'
+    orgId: 1
+    folder: 'user-service'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/user-service

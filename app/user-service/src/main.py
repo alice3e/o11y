@@ -9,6 +9,12 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import logging
 
+
+# 1. Импортируем Instrumentator и Counter
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter
+
+
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -22,6 +28,16 @@ ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:80
 
 # Создание приложения FastAPI
 app = FastAPI()
+
+# 2. Создаем кастомную метрику для подсчета регистраций
+users_registered_counter = Counter(
+    'users_registered_total',
+    'Total number of users registered'
+)
+
+# 3. Инструментируем приложение с Prometheus при создании
+instrumentator = Instrumentator().instrument(app).expose(app)
+
 
 # Модели данных
 class Token(BaseModel):
@@ -99,7 +115,7 @@ def create_user(username: str, password: str, full_name: str, phone: str, is_adm
     users_db[username] = user_in_db
     
     # Создаем токен для пользователя
-    access_token_expires = timedelta(days=30)  # Длительный срок для демо
+    access_token_expires = timedelta(days=30)
     access_token = create_access_token(
         data={"sub": username}, expires_delta=access_token_expires
     )
@@ -116,6 +132,8 @@ def create_user(username: str, password: str, full_name: str, phone: str, is_adm
 # Создаем демо пользователей при запуске
 @app.on_event("startup")
 async def startup_event():
+    logger.info("Application instrumented for Prometheus with default settings")
+
     logger.info("Creating default users for Swagger UI...")
     
     # Создаем обычного пользователя
@@ -196,6 +214,12 @@ async def register_user(user: UserCreate):
         total_spent=0.0
     )
     users_db[user.username] = user_in_db
+    
+
+    # Увеличиваем наш кастомный счетчик
+    users_registered_counter.inc()
+
+
     return user_in_db
 
 @app.post("/token", response_model=Token)
@@ -367,7 +391,7 @@ async def get_swagger_admin_token():
     if "swagger_admin" not in users_db:
         raise HTTPException(status_code=404, detail="Swagger admin user not found")
     
-    access_token_expires = timedelta(days=30)  # Длительный срок для демо
+    access_token_expires = timedelta(days=30)
     access_token = create_access_token(
         data={"sub": "swagger_admin"}, expires_delta=access_token_expires
     )
@@ -377,4 +401,4 @@ async def get_swagger_admin_token():
         "token_type": "bearer",
         "username": "swagger_admin",
         "is_admin": True
-    } 
+    }
