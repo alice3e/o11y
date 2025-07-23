@@ -1,10 +1,19 @@
 apiVersion: 1
 providers:
-  - name: 'default-dashboards'
+  - name: 'nginx'
     orgId: 1
     folder: 'Nginx'
     type: file
     disableDeletion: false
     editable: true
     options:
-      path: /etc/grafana/provisioning/dashboards
+      path: /etc/grafana/provisioning/dashboards/nginx
+
+  - name: 'cassandra'
+    orgId: 1
+    folder: 'cassandra'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/cassandra

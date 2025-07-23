@@ -3,19 +3,24 @@ version: '3.8'
 services:
   # База данных Cassandra
   cassandra:
-    image: cassandra:4.1
-    container_name: infra-cassandra
+    build:
+      context: ./cassandra
+    container_name: cassandra
     ports:
       - "9042:9042"
+    environment:
+      - CASSANDRA_BROADCAST_ADDRESS=cassandra
+      - "JVM_OPTS=-Djava.rmi.server.hostname=cassandra"
+    networks:
+      - product-store-net
     volumes:
       - cassandra_data:/var/lib/cassandra
+    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      test: ["CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e", "describe keyspaces"]
       interval: 15s
       timeout: 10s
       retries: 10
-    networks:
-      - product-store-net
 
   # Backend API сервис
   backend:
