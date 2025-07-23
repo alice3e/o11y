@@ -145,6 +145,7 @@ services:
     container_name: infra-nginx
     ports:
       - "80:80"
+      # - "8080:8080"
     depends_on:
       backend:
         condition: service_healthy
@@ -158,6 +159,18 @@ services:
         condition: service_healthy
       docs:
         condition: service_started
+    networks:
+      - product-store-net
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter
+    container_name: nginx-exporter
+    command: -nginx.scrape-uri http://nginx:8080/stub_status
+    ports:
+      - "9113:9113" # Порт, на котором экспортер будет отдавать метрики для Prometheus
+      # the default metrics path -- /metrics
+    depends_on:
+      - nginx
     networks:
       - product-store-net
 
