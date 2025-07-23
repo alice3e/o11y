@@ -5,10 +5,13 @@ from pydantic import BaseModel, UUID4
 import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
+from jose import JWTError, jwt
 
 # Настройки
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:8002")
+SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey123")
+ALGORITHM = "HS256"
 
 # In-memory хранилище корзин
 carts_db: Dict[str, Dict[str, Any]] = {}
@@ -74,9 +77,20 @@ async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Op
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(status_code=401, detail="Invalid authorization header")
     
-    # Возвращаем subject из токена как user_id
-    # В реальном приложении здесь должна быть декодирование JWT
-    return parts[1]  # Используем токен как идентификатор пользователя
+    token = parts[1]
+    
+    # Пытаемся декодировать JWT для получения username
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username:
+            return username
+    except JWTError:
+        # Если не удалось декодировать, используем токен как идентификатор
+        pass
+    
+    # Возвращаем токен как идентификатор пользователя
+    return token
 
 async def get_product_info(product_id: UUID4) -> dict:
     """Получение информации о товаре из бэкенд-сервиса"""

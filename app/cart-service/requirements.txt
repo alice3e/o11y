@@ -1,4 +1,5 @@
 fastapi
 uvicorn
 httpx
-pydantic 
+pydantic
+python-jose[cryptography] 

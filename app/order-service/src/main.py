@@ -2,7 +2,7 @@ import os
 import httpx
 import asyncio
 import random
-import jwt
+from jose import JWTError, jwt
 from fastapi import FastAPI, HTTPException, Depends, Header, BackgroundTasks
 from pydantic import BaseModel, UUID4
 import uuid
@@ -71,7 +71,7 @@ async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Op
         username = payload.get("sub")
         if username:
             return username
-    except Exception:
+    except JWTError:
         # Если не удалось декодировать, используем токен как идентификатор
         pass
     
