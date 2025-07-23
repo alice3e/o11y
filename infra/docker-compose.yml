@@ -28,6 +28,7 @@ services:
         condition: service_healthy
     environment:
       - CASSANDRA_HOST=cassandra
+      - SECRET_KEY=supersecretkey123
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
       interval: 10s
