@@ -106,28 +106,40 @@ if authorization:
 
 ### 3. Извлечение пользователя из токена
 
-Order Service может извлекать имя пользователя из JWT токена:
+Все сервисы (Cart Service, Order Service) используют одинаковую логику для извлечения имени пользователя из JWT токена:
 
 ```python
-# Пример из Order Service
-def get_user_id(
-    authorization: Optional[str] = Header(None),
-    x_user_id: Optional[str] = Header(None, alias="X-User-ID")
-):
+# Пример из Order Service и Cart Service
+async def get_user_id(
+    authorization: Optional[str] = Header(None), 
+    x_user_id: Optional[str] = Header(None)
+) -> str:
+    """Получение идентификатора пользователя из заголовка Authorization или X-User-ID"""
     if x_user_id:
         return x_user_id
     
-    if authorization and authorization.startswith("Bearer "):
-        token = authorization.replace("Bearer ", "")
-        try:
-            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-            username = payload.get("sub")
-            if username:
-                return username
-        except Exception:
-            pass
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Authorization header missing")
     
-    raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+    # Извлекаем user_id из токена
+    parts = authorization.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = parts[1]
+    
+    # Пытаемся декодировать JWT для получения username
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        username = payload.get("sub")
+        if username:
+            return username
+    except JWTError:
+        # Если не удалось декодировать, используем токен как идентификатор
+        pass
+    
+    # Возвращаем токен как идентификатор пользователя (fallback)
+    return token
 ```
 
 ## Обработка ошибок аутентификации
@@ -138,6 +150,27 @@ def get_user_id(
 2. **Недействительный токен**: Возвращается ошибка 401 Unauthorized с деталями
 3. **Истекший токен**: Пользователю необходимо получить новый токен
 4. **Недостаточные права**: Возвращается ошибка 403 Forbidden
+
+## Конфигурация аутентификации
+
+Система аутентификации использует следующие переменные окружения:
+
+### Переменные окружения
+
+- **SECRET_KEY**: Секретный ключ для подписи JWT токенов
+  - Значение по умолчанию: `supersecretkey123`
+  - Используется всеми сервисами (User, Cart, Order)
+  - В docker-compose.yml настроен одинаковый ключ для всех сервисов
+
+- **ALGORITHM**: Алгоритм подписи JWT токенов
+  - Значение по умолчанию: `HS256`
+  - Стандартный алгоритм для HMAC с SHA-256
+
+Пример конфигурации в docker-compose.yml:
+```yaml
+environment:
+  - SECRET_KEY=supersecretkey123
+```
 
 ## Рекомендации по безопасности
 
