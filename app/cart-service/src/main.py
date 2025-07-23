@@ -178,6 +178,11 @@ app = FastAPI()
 async def root():
     return {"message": "Cart Service API"}
 
+@app.get("/health")
+async def health_check():
+    """Health check эндпоинт для проверки состояния сервиса"""
+    return {"status": "ok", "service": "cart-service"}
+
 @app.get("/categories/", response_model=List[Category])
 async def get_all_categories():
     """Получение списка всех категорий товаров"""

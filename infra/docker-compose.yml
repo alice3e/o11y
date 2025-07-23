@@ -49,7 +49,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -69,7 +69,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -94,7 +94,7 @@ services:
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/"]
+      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -143,6 +143,11 @@ async def notify_user_service(order_id: str, status: str):
 async def root():
     return {"message": "Order Service API"}
 
+@app.get("/health")
+async def health_check():
+    """Health check эндпоинт для проверки состояния сервиса"""
+    return {"status": "ok", "service": "order-service"}
+
 @app.get("/orders/", response_model=List[Order])
 async def get_orders(user_id: str = Depends(get_user_id), admin: Optional[bool] = Header(False)):
     """Получение списка заказов пользователя или всех заказов для админа"""

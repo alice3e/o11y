@@ -57,9 +57,9 @@ main() {
     
     local services=(
         "${BASE_URL}/api/system/health"
-        "${BASE_URL}/cart-api/"
-        "${BASE_URL}/order-api/"
-        "${BASE_URL}/user-api/"
+        "${BASE_URL}/cart-api/health"
+        "${BASE_URL}/order-api/health"
+        "${BASE_URL}/user-api/health"
     )
     
     local service_names=(

@@ -174,6 +174,11 @@ async def get_order_api_client():
 async def root():
     return {"message": "User Service API"}
 
+@app.get("/health")
+async def health_check():
+    """Health check эндпоинт для проверки состояния сервиса"""
+    return {"status": "ok", "service": "user-service"}
+
 @app.post("/users/register", response_model=User)
 async def register_user(user: UserCreate):
     """Регистрация нового пользователя"""
