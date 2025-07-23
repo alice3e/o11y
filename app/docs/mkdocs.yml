@@ -7,6 +7,8 @@ nav:
   - 'Архитектура': 'architecture.md'
   - 'Микросервисы': 'microservices.md'
   - 'База данных': 'database.md'
+  - 'Мониторинг': 'monitoring.md'
+  - 'Нагрузочное тестирование': 'load_testing.md'
   - 'Тестирование': 'testing.md'
   - 'Аутентификация': 'authentication.md'
   - 'Планы на будущее': 'future_plans.md'

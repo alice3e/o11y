@@ -3,7 +3,6 @@
 Система построена на микросервисной архитектуре и полностью контейнеризирована с помощью Docker. Оркестрация для локальной разработки осуществляется через Docker Compose.
 
 ## Схема взаимодействия сервисов
-
 ```mermaid
 graph TB
     subgraph "External Access"
@@ -86,6 +85,7 @@ graph TB
     class NGINX,PROM,GRAFANA,NGINX_EXP infraBox
     class INSTRUMENTATION,CUSTOM_METRICS,DASHBOARDS,ALERTS monitorBox
 ```
+
 
 ## Компоненты системы
 
