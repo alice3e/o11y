@@ -124,14 +124,7 @@
                 if (token) {
                     try {
                         ui.authActions.authorize({
-                            bearerAuth: {
-                                name: "bearerAuth",
-                                schema: {
-                                    type: "http",
-                                    scheme: "bearer"
-                                },
-                                value: token
-                            }
+                            bearerAuth: token
                         });
                         console.log('Token applied successfully');
                     } catch (error) {
@@ -143,21 +136,24 @@
             // Функция для установки или удаления заголовка admin
             function toggleAdmin() {
                 const isAdmin = document.getElementById('admin-checkbox').checked;
+                console.log('Toggling admin mode:', isAdmin);
                 
                 if (isAdmin) {
-                    ui.authActions.authorize({
-                        adminAuth: {
-                            name: "adminAuth",
-                            schema: {
-                                type: "apiKey",
-                                in: "header",
-                                name: "admin"
-                            },
-                            value: "true"
-                        }
-                    });
+                    try {
+                        ui.authActions.authorize({
+                            adminAuth: "true"
+                        });
+                        console.log('Admin mode enabled');
+                    } catch (error) {
+                        console.error('Error enabling admin mode:', error);
+                    }
                 } else {
-                    ui.authActions.logout(["adminAuth"]);
+                    try {
+                        ui.authActions.logout(["adminAuth"]);
+                        console.log('Admin mode disabled');
+                    } catch (error) {
+                        console.error('Error disabling admin mode:', error);
+                    }
                 }
             }
             
