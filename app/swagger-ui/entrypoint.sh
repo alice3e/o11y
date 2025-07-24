@@ -84,7 +84,7 @@ nginx
 # Ожидаем доступности всех микросервисов в фоновом режиме
 (
     # Сначала проверяем базовую доступность сервисов
-    wait_for_service "http://backend:8000/docs" "Backend API"
+    wait_for_service "http://backend:8000/" "Backend API"
     wait_for_service "http://cart-service:8001/docs" "Cart Service"
     wait_for_service "http://order-service:8002/docs" "Order Service"
     wait_for_service "http://user-service:8003/docs" "User Service"

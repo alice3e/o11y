@@ -2,6 +2,7 @@ import os
 import httpx
 from fastapi import FastAPI, HTTPException, Depends, status, Form, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
@@ -28,6 +29,15 @@ ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:80
 
 # Создание приложения FastAPI
 app = FastAPI()
+
+# Настройка CORS для поддержки запросов из браузера
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # В продакшене следует указать конкретные домены
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # 2. Создаем кастомную метрику для подсчета регистраций
 users_registered_counter = Counter(

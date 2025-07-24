@@ -120,17 +120,23 @@
             // Функция для применения JWT токена к авторизации Swagger UI
             function applyToken() {
                 const token = document.getElementById('token-input').value;
+                console.log('Applying token:', token ? 'Token present' : 'No token');
                 if (token) {
-                    ui.authActions.authorize({
-                        bearerAuth: {
-                            name: "bearerAuth",
-                            schema: {
-                                type: "http",
-                                scheme: "bearer"
-                            },
-                            value: token
-                        }
-                    });
+                    try {
+                        ui.authActions.authorize({
+                            bearerAuth: {
+                                name: "bearerAuth",
+                                schema: {
+                                    type: "http",
+                                    scheme: "bearer"
+                                },
+                                value: token
+                            }
+                        });
+                        console.log('Token applied successfully');
+                    } catch (error) {
+                        console.error('Error applying token:', error);
+                    }
                 }
             }
             
@@ -197,12 +203,16 @@
             // Функция для автоматического получения токена администратора
             async function getSwaggerAdminToken() {
                 try {
+                    console.log('Fetching admin token from /user-api/swagger-admin-token');
                     const response = await fetch('/user-api/swagger-admin-token');
                     
                     if (response.ok) {
                         const data = await response.json();
+                        console.log('Admin token received:', data.username);
                         document.getElementById('token-input').value = data.access_token;
                         document.getElementById('current-user').textContent = data.username;
+                        
+                        // Применяем токен
                         applyToken();
                         
                         // Устанавливаем админский режим
@@ -211,7 +221,7 @@
                         
                         return true;
                     } else {
-                        console.error('Failed to get admin token:', await response.text());
+                        console.error('Failed to get admin token:', response.status, await response.text());
                         return false;
                     }
                 } catch (error) {
@@ -223,8 +233,17 @@
             // Экспортируем функцию для доступа из консоли (для тестирования)
             window.loginAndGetToken = loginAndGetToken;
             
-            // Автоматически получаем токен администратора при загрузке страницы
-            getSwaggerAdminToken();
+            // Автоматически получаем токен администратора после инициализации Swagger UI
+            setTimeout(() => {
+                console.log('Attempting auto-login...');
+                getSwaggerAdminToken().then(success => {
+                    if (success) {
+                        console.log('Auto-login successful!');
+                    } else {
+                        console.error('Auto-login failed!');
+                    }
+                });
+            }, 2000); // Даем 2 секунды на инициализацию Swagger UI
         }
     </script>
 </body>
