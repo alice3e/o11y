@@ -3,6 +3,7 @@ import logging
 import time
 import threading
 from locust import HttpUser, task, between, events
+from locust.env import Environment
 
 # --- Настройка логирования ---
 logging.getLogger("urllib3").setLevel(logging.WARNING)
@@ -14,6 +15,8 @@ products_count = 0
 phase_lock = threading.Lock()
 registered_admins = []
 registered_users = []
+admin_tokens = {}
+user_tokens = {}
 
 # --- Константы ---
 TARGET_PRODUCTS = 5000
@@ -41,7 +44,7 @@ def check_products_count(client, headers):
     """Проверяет количество товаров в БД"""
     global products_count
     try:
-        response = client.get("/api/products/", headers=headers)
+        response = client.get("/api/products/", headers=headers, name="admin_products_check")
         if response.status_code == 200:
             data = response.json()
             if isinstance(data, dict) and 'items' in data:
@@ -72,7 +75,10 @@ class BaseUser(HttpUser):
         }
         
         try:
-            response = self.client.post("/user-api/users/register", json=user_data)
+            response = self.client.post(
+                "/user-api/users/register",
+                json=user_data
+            )
             if response.status_code in [200, 201]:
                 logging.info(f"User {username} registered successfully")
                 return True
@@ -87,7 +93,10 @@ class BaseUser(HttpUser):
         """Выполняет вход и сохраняет токен"""
         creds = {"username": username, "password": password}
         try:
-            response = self.client.post("/user-api/token", data=creds)
+            response = self.client.post(
+                "/user-api/token",
+                data=creds
+            )
             if response.status_code == 200:
                 self.token = response.json()["access_token"]
                 self.headers = {"Authorization": f"Bearer {self.token}"}
@@ -108,7 +117,7 @@ class PhaseOneAdmin(BaseUser):
     wait_time = between(0.5, 2)
 
     def on_start(self):
-        global current_phase, registered_admins
+        global current_phase, registered_admins, admin_tokens
         
         if current_phase != 1:
             return
@@ -122,6 +131,7 @@ class PhaseOneAdmin(BaseUser):
             if self.login(username, password):
                 with phase_lock:
                     registered_admins.append(username)
+                    admin_tokens[username] = self.token
 
     @task(1)
     def add_products_bulk(self):
@@ -155,9 +165,17 @@ class PhaseOneAdmin(BaseUser):
             }
             
             try:
-                response = self.client.post("/api/products/", headers=self.headers, json=product_data)
-                if response.status_code not in [200, 201]:
-                    logging.error(f"Failed to create product: {response.status_code} - {response.text}")
+                with self.client.post(
+                    "/api/products/",
+                    headers=self.headers,
+                    json=product_data,
+                    catch_response=True,
+                    name="/api/products/ (create)"
+                ) as response:
+                    if response.status_code in [200, 201]:
+                        response.success()
+                    else:
+                        response.failure(f"Failed to create product: {response.status_code} - {response.text}")
             except Exception as e:
                 logging.error(f"Error creating product: {e}")
 
@@ -168,7 +186,7 @@ class PhaseTwoUser(BaseUser):
     wait_time = between(1, 3)
 
     def on_start(self):
-        global current_phase, registered_users
+        global current_phase, registered_users, user_tokens
         
         if current_phase != 2:
             return
@@ -182,6 +200,7 @@ class PhaseTwoUser(BaseUser):
             if self.login(username, password):
                 with phase_lock:
                     registered_users.append(username)
+                    user_tokens[username] = self.token
                     
                     # Переходим к фазе 3 когда достаточно пользователей
                     if len(registered_users) >= 50:
@@ -204,7 +223,7 @@ class PhaseThreeCustomer(BaseUser):
     cart_items = {}
 
     def on_start(self):
-        global current_phase, registered_users
+        global current_phase, registered_users, user_tokens
         
         if current_phase != 3 or not registered_users:
             return
@@ -224,20 +243,31 @@ class PhaseThreeCustomer(BaseUser):
             
         category = random.choice(CATEGORIES)
         try:
-            response = self.client.get(f"/api/products/?category={category}", headers=self.headers)
-            if response.status_code == 200:
-                data = response.json()
-                items = data.get('items', []) if isinstance(data, dict) else data
-                
-                if items and isinstance(items, list):
-                    product = random.choice(items)
-                    product_id = product.get("product_id") or product.get("id")
-                    if product_id:
-                        self.viewed_products.append(product_id)
-                        self.viewed_products = self.viewed_products[-20:]  # Храним последние 20
-                        
-                        # Просматриваем детали товара
-                        self.client.get(f"/api/products/{product_id}", headers=self.headers)
+            with self.client.get(
+                f"/api/products/?category={category}",
+                headers=self.headers,
+                name="/api/products/?category=[category]",
+                catch_response=True
+            ) as response:
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get('items', []) if isinstance(data, dict) else data
+                    
+                    if items and isinstance(items, list):
+                        product = random.choice(items)
+                        product_id = product.get("product_id") or product.get("id")
+                        if product_id:
+                            self.viewed_products.append(product_id)
+                            self.viewed_products = self.viewed_products[-20:]  # Храним последние 20
+                            
+                            # Просматриваем детали товара
+                            self.client.get(
+                                f"/api/products/{product_id}",
+                                headers=self.headers,
+                                name="/api/products/[product_id]"
+                            )
+                else:
+                    response.failure(f"Failed to browse category {category}: {response.status_code}")
         except Exception as e:
             logging.error(f"Error browsing products: {e}")
 
@@ -254,14 +284,23 @@ class PhaseThreeCustomer(BaseUser):
         }
         
         try:
-            response = self.client.post("/cart-api/cart/items", headers=self.headers, json=cart_data)
-            if response.status_code in [200, 201]:
-                # Сохраняем информацию о товаре в корзине
-                cart_response = response.json()
-                if isinstance(cart_response, dict) and 'items' in cart_response:
-                    for item in cart_response['items']:
-                        if item.get('product_id') == product_id:
-                            self.cart_items[item.get('id')] = product_id
+            with self.client.post(
+                "/cart-api/cart/items",
+                headers=self.headers,
+                json=cart_data,
+                name="/cart-api/cart/items",
+                catch_response=True
+            ) as response:
+                if response.status_code in [200, 201]:
+                    response.success()
+                    # Сохраняем информацию о товаре в корзине
+                    cart_response = response.json()
+                    if isinstance(cart_response, dict) and 'items' in cart_response:
+                        for item in cart_response['items']:
+                            if item.get('product_id') == product_id:
+                                self.cart_items[item.get('id')] = product_id
+                else:
+                    response.failure(f"Failed to add to cart: {response.status_code}")
         except Exception as e:
             logging.error(f"Error adding to cart: {e}")
 
@@ -275,15 +314,28 @@ class PhaseThreeCustomer(BaseUser):
         
         if random.random() < 0.3:  # 30% удаляем
             try:
-                response = self.client.delete(f"/cart-api/cart/items/{item_id}", headers=self.headers)
-                if response.status_code == 200:
-                    del self.cart_items[item_id]
+                with self.client.delete(
+                    f"/cart-api/cart/items/{item_id}",
+                    headers=self.headers,
+                    name="/cart-api/cart/items/[item_id]",
+                    catch_response=True
+                ) as response:
+                    if response.status_code == 200:
+                        response.success()
+                        del self.cart_items[item_id]
+                    else:
+                        response.failure(f"Failed to delete cart item: {response.status_code}")
             except Exception as e:
                 logging.error(f"Error deleting cart item: {e}")
         else:  # 70% обновляем количество
             update_data = {"quantity": random.randint(1, 10)}
             try:
-                self.client.put(f"/cart-api/cart/items/{item_id}", headers=self.headers, json=update_data)
+                self.client.put(
+                    f"/cart-api/cart/items/{item_id}",
+                    headers=self.headers,
+                    json=update_data,
+                    name="/cart-api/cart/items/[item_id] (update)"
+                )
             except Exception as e:
                 logging.error(f"Error updating cart item: {e}")
 
@@ -294,10 +346,18 @@ class PhaseThreeCustomer(BaseUser):
             return
             
         try:
-            response = self.client.post("/cart-api/cart/checkout", headers=self.headers)
-            if response.status_code in [200, 201]:
-                self.cart_items = {}  # Очищаем корзину
-                logging.info(f"Order completed by {self.username}")
+            with self.client.post(
+                "/cart-api/cart/checkout",
+                headers=self.headers,
+                name="/cart-api/cart/checkout",
+                catch_response=True
+            ) as response:
+                if response.status_code in [200, 201]:
+                    response.success()
+                    self.cart_items = {}  # Очищаем корзину
+                    logging.info(f"Order completed by {self.username}")
+                else:
+                    response.failure(f"Failed to checkout: {response.status_code}")
         except Exception as e:
             logging.error(f"Error during checkout: {e}")
 
@@ -308,8 +368,16 @@ class PhaseThreeCustomer(BaseUser):
             return
             
         try:
-            self.client.get("/user-api/users/me/orders", headers=self.headers)
-            self.client.get("/user-api/users/me/profile", headers=self.headers)
+            self.client.get(
+                "/user-api/users/me/orders",
+                headers=self.headers,
+                name="/user-api/users/me/orders"
+            )
+            self.client.get(
+                "/user-api/users/me/profile",
+                headers=self.headers,
+                name="/user-api/users/me/profile"
+            )
         except Exception as e:
             logging.error(f"Error checking orders: {e}")
 
@@ -320,7 +388,7 @@ class PhaseThreeAdmin(BaseUser):
     wait_time = between(5, 15)
 
     def on_start(self):
-        global current_phase, registered_admins
+        global current_phase, registered_admins, admin_tokens
         
         if current_phase != 3 or not registered_admins:
             return
@@ -340,32 +408,42 @@ class PhaseThreeAdmin(BaseUser):
             
         try:
             # Получаем все товары
-            response = self.client.get("/api/products/", headers=self.headers)
-            if response.status_code == 200:
-                data = response.json()
-                items = data.get('items', []) if isinstance(data, dict) else data
-                
-                if items:
-                    # Находим товары с низкими остатками
-                    low_stock_products = [
-                        p for p in items 
-                        if isinstance(p, dict) and p.get('stock_count', 0) < 20
-                    ]
+            with self.client.get(
+                "/api/products/",
+                headers=self.headers,
+                name="/api/products/ (admin)",
+                catch_response=True
+            ) as response:
+                if response.status_code == 200:
+                    data = response.json()
+                    items = data.get('items', []) if isinstance(data, dict) else data
                     
-                    if low_stock_products:
-                        product = random.choice(low_stock_products)
-                        product_id = product.get('product_id') or product.get('id')
+                    if items:
+                        # Находим товары с низкими остатками
+                        low_stock_products = [
+                            p for p in items 
+                            if isinstance(p, dict) and p.get('stock_count', 0) < 20
+                        ]
                         
-                        # Пополняем остатки
-                        updated_data = {
-                            "name": product.get('name'),
-                            "category": product.get('category'),
-                            "price": product.get('price'),
-                            "stock_count": product.get('stock_count', 0) + random.randint(50, 200)
-                        }
-                        
-                        self.client.put(f"/api/products/{product_id}", headers=self.headers, json=updated_data)
-                        logging.info(f"Restocked product {product.get('name')}")
+                        if low_stock_products:
+                            product = random.choice(low_stock_products)
+                            product_id = product.get('product_id') or product.get('id')
+                            
+                            # Пополняем остатки
+                            updated_data = {
+                                "name": product.get('name'),
+                                "category": product.get('category'),
+                                "price": product.get('price'),
+                                "stock_count": product.get('stock_count', 0) + random.randint(50, 200)
+                            }
+                            
+                            self.client.put(
+                                f"/api/products/{product_id}",
+                                headers=self.headers,
+                                json=updated_data,
+                                name="/api/products/[product_id] (restock)"
+                            )
+                            logging.info(f"Restocked product {product.get('name')}")
         except Exception as e:
             logging.error(f"Error restocking products: {e}")
 
@@ -387,9 +465,18 @@ class PhaseThreeAdmin(BaseUser):
         }
         
         try:
-            response = self.client.post("/api/products/", headers=self.headers, json=product_data)
-            if response.status_code in [200, 201]:
-                logging.info(f"Added new product: {product_data['name']}")
+            with self.client.post(
+                "/api/products/",
+                headers=self.headers,
+                json=product_data,
+                name="/api/products/ (new)",
+                catch_response=True
+            ) as response:
+                if response.status_code in [200, 201]:
+                    response.success()
+                    logging.info(f"Added new product: {product_data['name']}")
+                else:
+                    response.failure(f"Failed to add product: {response.status_code}")
         except Exception as e:
             logging.error(f"Error adding new product: {e}")
 
@@ -413,6 +500,15 @@ def on_test_stop(environment, **kwargs):
     logging.info(f"Products created: {products_count}")
     logging.info(f"Admins registered: {len(registered_admins)}")
     logging.info(f"Users registered: {len(registered_users)}")
+
+
+# Логирование смены фаз
+@events.user_add.add_listener
+def on_user_add(user_instance, **kwargs):
+    """Логирование при добавлении пользователей"""
+    global current_phase
+    if hasattr(user_instance, '__class__'):
+        logging.info(f"Phase {current_phase}: Added {user_instance.__class__.__name__}")
 
 
 def log_phase_status():

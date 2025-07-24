@@ -59,6 +59,7 @@ class User(UserBase):
     id: str
     created_at: datetime
     total_spent: float = 0.0
+    is_admin: bool = False
 
 class UserInDB(User):
     hashed_password: str
@@ -110,14 +111,15 @@ def create_user(username: str, password: str, full_name: str, phone: str, is_adm
         hashed_password=hashed_password,
         id=f"{len(users_db) + 1:08d}",
         created_at=datetime.now(),
-        total_spent=0.0
+        total_spent=0.0,
+        is_admin=is_admin
     )
     users_db[username] = user_in_db
     
-    # Создаем токен для пользователя
+    # Создаем токен для пользователя с информацией о роли
     access_token_expires = timedelta(days=30)
     access_token = create_access_token(
-        data={"sub": username}, expires_delta=access_token_expires
+        data={"sub": username, "is_admin": is_admin}, expires_delta=access_token_expires
     )
     
     # Логируем информацию о созданном пользователе
@@ -203,6 +205,9 @@ async def register_user(user: UserCreate):
     if user.username in users_db:
         raise HTTPException(status_code=400, detail="Username already registered")
     
+    # Определяем, является ли пользователь админом на основе username
+    is_admin = user.username.startswith("admin_")
+    
     hashed_password = get_password_hash(user.password)
     user_in_db = UserInDB(
         username=user.username,
@@ -211,7 +216,8 @@ async def register_user(user: UserCreate):
         hashed_password=hashed_password,
         id=f"{len(users_db) + 1:08d}",
         created_at=datetime.now(),
-        total_spent=0.0
+        total_spent=0.0,
+        is_admin=is_admin
     )
     users_db[user.username] = user_in_db
     
@@ -219,6 +225,9 @@ async def register_user(user: UserCreate):
     # Увеличиваем наш кастомный счетчик
     users_registered_counter.inc()
 
+    # Логируем информацию о созданном пользователе
+    admin_status = "ADMIN USER" if is_admin else "REGULAR USER"
+    logger.info(f"Registered {admin_status}: {user.username}")
 
     return user_in_db
 
@@ -234,7 +243,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         )
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
+        data={"sub": user.username, "is_admin": user.is_admin}, expires_delta=access_token_expires
     )
     return {"access_token": access_token, "token_type": "bearer"}
 

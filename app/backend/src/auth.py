@@ -33,8 +33,8 @@ async def get_user_info(authorization: Optional[str] = Header(None)):
         if not username:
             return None
         
-        # Проверяем, является ли пользователь администратором
-        is_admin = username in ["swagger_admin"]  # Можно расширить список админов
+        # Получаем информацию о роли из токена или определяем по username
+        is_admin = payload.get("is_admin", False) or username.startswith("admin_") or username == "swagger_admin"
         
         return {
             "username": username,
