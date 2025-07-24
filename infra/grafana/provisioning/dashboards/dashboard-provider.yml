@@ -46,3 +46,13 @@ providers:
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards/cart-service
+
+
+  - name: 'backend'
+    orgId: 1
+    folder: 'backend'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/backend
