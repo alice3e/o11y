@@ -3,3 +3,5 @@ fastapi
 uvicorn
 cassandra-driver
 python-jose[cryptography]
+prometheus-client
+prometheus-fastapi-instrumentator
