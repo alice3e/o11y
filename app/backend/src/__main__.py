@@ -9,6 +9,7 @@ from .api import system_router, products_router
 
 # Импортируем сервис для работы с БД
 from .services import cassandra
+from .services.metrics import setup_metrics
 
 
 @asynccontextmanager
@@ -17,6 +18,11 @@ async def lifespan(app: FastAPI):
     print("Application startup: Connecting to database...")
     app.state.cassandra_session = cassandra.init_cassandra()
     print("Application startup: Database ready.")
+    
+    # Настраиваем метрики после инициализации БД
+    setup_metrics(app, app.state.cassandra_session)
+    print("Application startup: Metrics configured.")
+    
     yield
     print("Application shutdown: Closing database connection...")
     app.state.cassandra_session.shutdown()
@@ -39,6 +45,15 @@ app = FastAPI(
 # ИСПОЛЬЗУЕМ НОВЫЕ ИМЕНА
 app.include_router(system_router)
 app.include_router(products_router)
+
+# --- Эндпоинт для метрик ---
+from fastapi import Response
+from .services.metrics import get_metrics
+
+@app.get("/metrics")
+def metrics():
+    """Эндпоинт для получения метрик Prometheus"""
+    return Response(content=get_metrics(), media_type="text/plain")
 
 # --- Корневой эндпоинт API ---
 @app.get("/")

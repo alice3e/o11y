@@ -4,6 +4,7 @@ from ..core.models import ProductCreate, ProductOut, ProductDetailsOut, ProductU
 from ..auth import get_user_info, get_admin_user
 from cassandra.cqlengine.query import DoesNotExist
 import uuid
+import time
 from typing import List, Optional
 from decimal import Decimal
 from pydantic import BaseModel
@@ -33,6 +34,15 @@ class DatabaseError(BaseModel):
 
 def get_cassandra_session(request: Request):
     return request.app.state.cassandra_session
+
+
+def get_metrics_collector():
+    """Получить сборщик метрик"""
+    try:
+        from ..services.metrics import metrics_collector
+        return metrics_collector
+    except ImportError:
+        return None
 
 
 @router.get(
@@ -101,6 +111,9 @@ def list_products(
     4. 📄 Применение пагинации
     5. 📊 Расчет метаданных для навигации
     """
+    metrics_collector = get_metrics_collector()
+    start_time = time.time()
+    
     try:
         # Проверка контроля доступа
         is_admin = user_info and user_info.get("is_admin", False)
@@ -149,7 +162,11 @@ def list_products(
             query += " ALLOW FILTERING"
         
         # Выполнение запроса
+        query_start_time = time.time()
         rows = session.execute(query, params)
+        if metrics_collector:
+            query_duration = time.time() - query_start_time
+            metrics_collector.record_db_query('select_products', query_duration)
         
         # Преобразование в список для сортировки и пагинации
         products = [ProductOut(product_id=row.id, name=row.name, category=row.category, price=row.price) for row in rows]
@@ -170,6 +187,10 @@ def list_products(
         
         # Расчет метаданных пагинации
         total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+        
+        # Обновляем метрики продуктов при запросах
+        if metrics_collector:
+            metrics_collector.update_product_metrics()
         
         return {
             "items": paginated_products,
@@ -236,7 +257,11 @@ def create_product(
     admin_user=Depends(get_admin_user)
 ):
     """Создание нового товара."""
+    metrics_collector = get_metrics_collector()
+    
     product_id = uuid.uuid4()
+    
+    query_start_time = time.time()
     session.execute(
         """
         INSERT INTO products (id, name, category, price, quantity, description, manufacturer)
@@ -244,14 +269,30 @@ def create_product(
         """,
         (product_id, product.name, product.category, product.price, product.stock_count, product.description, product.manufacturer)
     )
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('insert_product', query_duration)
+        # Обновляем метрики продуктов после создания
+        metrics_collector.update_product_metrics()
+    
     return ProductDetailsOut(product_id=product_id, **product.model_dump())
 
 
 @router.get("/{product_id}", response_model=ProductDetailsOut)
 def get_product(product_id: UUID, session=Depends(get_cassandra_session)):
     """Получение товара по ID."""
+    metrics_collector = get_metrics_collector()
+    
     query = "SELECT id, name, category, price, quantity, description, manufacturer FROM products WHERE id = %s"
+    
+    query_start_time = time.time()
     row = session.execute(query, [product_id]).one()
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('select_product_by_id', query_duration)
+    
     if not row:
         raise HTTPException(status_code=404, detail="Product not found")
     return ProductDetailsOut(
@@ -268,9 +309,18 @@ def get_product(product_id: UUID, session=Depends(get_cassandra_session)):
 @router.put("/{product_id}", response_model=ProductDetailsOut)
 def update_product(product_id: UUID, product_update: ProductUpdate, session=Depends(get_cassandra_session)):
     """Обновление товара по ID."""
+    metrics_collector = get_metrics_collector()
+    
     # First, get the current product
     get_query = "SELECT id, name, category, price, quantity, description, manufacturer FROM products WHERE id = %s"
+    
+    query_start_time = time.time()
     current_product_row = session.execute(get_query, [product_id]).one()
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('select_product_for_update', query_duration)
+    
     if not current_product_row:
         raise HTTPException(status_code=404, detail="Product not found")
 
@@ -293,6 +343,8 @@ def update_product(product_id: UUID, product_update: ProductUpdate, session=Depe
         SET name = %s, category = %s, price = %s, quantity = %s, description = %s, manufacturer = %s
         WHERE id = %s
     """
+    
+    query_start_time = time.time()
     session.execute(
         update_query,
         (
@@ -305,13 +357,31 @@ def update_product(product_id: UUID, product_update: ProductUpdate, session=Depe
             product_id,
         ),
     )
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('update_product', query_duration)
+        # Обновляем метрики продуктов после изменения
+        metrics_collector.update_product_metrics()
+    
     return current_product
 
 @router.delete("/{product_id}", status_code=204)
 def delete_product(product_id: UUID, session=Depends(get_cassandra_session)):
     """Удаление товара по ID."""
+    metrics_collector = get_metrics_collector()
+    
     query = "DELETE FROM products WHERE id = %s"
+    
+    query_start_time = time.time()
     session.execute(query, [product_id])
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('delete_product', query_duration)
+        # Обновляем метрики продуктов после удаления
+        metrics_collector.update_product_metrics()
+    
     return
 
 # New endpoints
@@ -319,9 +389,17 @@ def delete_product(product_id: UUID, session=Depends(get_cassandra_session)):
 @router.get("/categories/list", response_model=List[CategoryOut])
 def list_categories(session=Depends(get_cassandra_session)):
     """Получение списка доступных категорий и количества товаров в каждой."""
+    metrics_collector = get_metrics_collector()
+    
     # Get all products' categories
     categories_query = "SELECT category FROM products ALLOW FILTERING"
+    
+    query_start_time = time.time()
     categories_rows = session.execute(categories_query)
+    
+    if metrics_collector:
+        query_duration = time.time() - query_start_time
+        metrics_collector.record_db_query('select_categories', query_duration)
     
     # Use a dictionary to track unique categories and counts
     category_counts = {}
