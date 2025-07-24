@@ -8,8 +8,20 @@ from pydantic import BaseModel, UUID4
 import uuid
 from typing import List, Dict, Optional, Any
 from datetime import datetime
+import logging
+
+# 1. Импортируем Instrumentator и Counter
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter
 
 app = FastAPI()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# 3. Инструментируем приложение с Prometheus при создании
+instrumentator = Instrumentator().instrument(app).expose(app)
 
 # Настройки
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")

@@ -31,8 +31,8 @@ class BaseShopUser(HttpUser):
             with self.client.post(
                 "/user-api/token",
                 data=creds,
-                catch_response=True,
-                name="/user-api/token"
+                catch_response=True, # type: ignore
+                name="/user-api/token" # type: ignore
             ) as response:
                 if response.status_code == 200:
                     self.token = response.json()["access_token"]
@@ -70,8 +70,8 @@ class RegularUser(BaseShopUser):
         with self.client.get(
             f"/api/products/?category={category}",
             headers=self.headers,
-            name="/api/products/?category=[category]",
-            catch_response=True
+            name="/api/products/?category=[category]", # type: ignore
+            catch_response=True # type: ignore
         ) as response:
             if response.status_code == 200:
                 # --- ИСПРАВЛЕНИЕ ОШИБКИ KeyError ---
@@ -89,7 +89,7 @@ class RegularUser(BaseShopUser):
                         self.client.get(
                             f"/api/products/{product_id}",
                             headers=self.headers,
-                            name="/api/products/[product_id]"
+                            name="/api/products/[product_id]" # type: ignore
                         )
                 # --- КОНЕЦ ИСПРАВЛЕНИЯ ---
             else:
@@ -106,8 +106,8 @@ class RegularUser(BaseShopUser):
             "/cart-api/cart/items",
             headers=self.headers,
             json={"product_id": product_id, "quantity": random.randint(1, 3)},
-            name="/cart-api/cart/items",
-            catch_response=True
+            name="/cart-api/cart/items", # type: ignore
+            catch_response=True # type: ignore
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -131,8 +131,8 @@ class RegularUser(BaseShopUser):
             with self.client.delete(
                 f"/cart-api/cart/items/{item_id_to_modify}",
                 headers=self.headers,
-                name="/cart-api/cart/items/[item_id]",
-                catch_response=True
+                name="/cart-api/cart/items/[item_id]", # type: ignore
+                catch_response=True # type: ignore
             ) as response:
                 if response.status_code == 200:
                     response.success()
@@ -144,7 +144,7 @@ class RegularUser(BaseShopUser):
                 f"/cart-api/cart/items/{item_id_to_modify}",
                 headers=self.headers,
                 json={"quantity": random.randint(1, 5)},
-                name="/cart-api/cart/items/[item_id]"
+                name="/cart-api/cart/items/[item_id]" # type: ignore
             )
 
     @task(1)
@@ -156,8 +156,8 @@ class RegularUser(BaseShopUser):
         with self.client.post(
             "/cart-api/cart/checkout",
             headers=self.headers,
-            name="/cart-api/cart/checkout",
-            catch_response=True
+            name="/cart-api/cart/checkout", # type: ignore
+            catch_response=True # type: ignore
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -170,8 +170,8 @@ class RegularUser(BaseShopUser):
         """Редко просматривает свой профиль и историю заказов."""
         if not self.token:
             return
-        self.client.get("/user-api/users/me/profile", headers=self.headers, name="/user-api/users/me/profile")
-        self.client.get("/user-api/users/me/orders", headers=self.headers, name="/user-api/users/me/orders")
+        self.client.get("/user-api/users/me/profile", headers=self.headers, name="/user-api/users/me/profile") # type: ignore
+        self.client.get("/user-api/users/me/orders", headers=self.headers, name="/user-api/users/me/orders") # type: ignore
 
 class AdminUser(BaseShopUser):
     """
@@ -192,8 +192,8 @@ class AdminUser(BaseShopUser):
         with self.client.get(
             "/api/products/",
             headers=self.headers,
-            name="/api/products/ (admin)",
-            catch_response=True
+            name="/api/products/ (admin)", # type: ignore
+            catch_response=True # type: ignore
         ) as response:
             if response.status_code == 200:
                 response.success()
@@ -209,7 +209,7 @@ class AdminUser(BaseShopUser):
                             "price": round(product_to_update.get('price', 10.0) * random.uniform(0.9, 1.1), 2),
                             "quantity": product_to_update.get('quantity', 0) + random.randint(-5, 20)
                         },
-                        name="/api/products/[product_id] (update)"
+                        name="/api/products/[product_id] (update)" # type: ignore
                     )
             else:
                 response.failure(f"Failed to get all products as admin. Status: {response.status_code}")
@@ -226,7 +226,7 @@ class AdminUser(BaseShopUser):
             "price": round(random.uniform(50, 500), 2),
             "quantity": random.randint(10, 100)
         }
-        self.client.post("/api/products/", headers=self.headers, json=new_product, name="/api/products/ (create)")
+        self.client.post("/api/products/", headers=self.headers, json=new_product, name="/api/products/ (create)") # type: ignore
 
 @events.test_start.add_listener
 def on_test_start(environment, **kwargs):

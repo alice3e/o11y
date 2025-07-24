@@ -43,6 +43,13 @@ scrape_configs:
     static_configs:
       - targets: ['user-service:8003']
 
+   # --- Сбор метрик с order-service ---
+  - job_name: 'order-service'
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ['order-service:8003']
+
   # --- Сбор метрик с Cassandra (MCAC Agent) ---
   - job_name: "cassandra-mcac"
     scrape_interval: 15s
