@@ -102,18 +102,46 @@ class BaseUser(HttpUser):
             return False
 
 
-class PhaseOneAdmin(BaseUser):
-    """Фаза 1: Администраторы добавляют товары"""
+class DynamicUser(BaseUser):
+    """Универсальный пользователь, который меняет поведение в зависимости от фазы"""
     weight = 1
-    wait_time = between(0.5, 2)
+    wait_time = between(0.5, 3)
+    
+    user_role = None  # 'admin', 'user', 'customer'
+    viewed_products = []
+    cart_items = {}
 
     def on_start(self):
-        global current_phase, registered_admins
+        global current_phase, registered_admins, registered_users
         
-        if current_phase != 1:
-            return
-            
-        # Создаем уникального админа
+        # Определяем роль пользователя в зависимости от фазы
+        if current_phase == 1:
+            # Фаза 1: становимся админом если нужно больше админов
+            if len(registered_admins) < 3:  # Ограничиваем количество админов
+                self.become_admin()
+            else:
+                self.wait_for_next_phase()
+                
+        elif current_phase == 2:
+            # Фаза 2: регистрируемся как обычный пользователь
+            if len(registered_users) < 50:
+                self.become_user()
+            else:
+                self.wait_for_next_phase()
+                
+        elif current_phase == 3:
+            # Фаза 3: выбираем роль в зависимости от потребностей
+            if len(registered_users) > 0:
+                if random.random() < 0.1 and len(registered_admins) > 0:  # 10% админов
+                    self.become_existing_admin()
+                else:  # 90% покупателей
+                    self.become_existing_customer()
+            else:
+                self.wait_for_next_phase()
+    
+    def become_admin(self):
+        """Становится администратором"""
+        global registered_admins
         admin_num = len(registered_admins) + 1
         username = f"admin_{admin_num}_{random.randint(1000, 9999)}"
         password = "admin123"
@@ -122,13 +150,77 @@ class PhaseOneAdmin(BaseUser):
             if self.login(username, password):
                 with phase_lock:
                     registered_admins.append(username)
+                    self.user_role = 'admin'
+                logging.info(f"✅ New admin created: {username}")
+    
+    def become_user(self):
+        """Регистрируется как обычный пользователь"""
+        global registered_users, current_phase
+        user_num = len(registered_users) + 1
+        username = f"user_{user_num}_{random.randint(1000, 9999)}"
+        password = "user123"
+        
+        if self.register_user(username, password):
+            if self.login(username, password):
+                with phase_lock:
+                    registered_users.append(username)
+                    self.user_role = 'user'
+                    
+                    # Проверяем переход к фазе 3
+                    if len(registered_users) >= 50:
+                        if current_phase == 2:
+                            current_phase = 3
+                            logging.info(f"🎉 PHASE 2 COMPLETE! Users registered: {len(registered_users)}. Moving to PHASE 3...")
+                
+                logging.info(f"✅ New user registered: {username}")
+    
+    def become_existing_customer(self):
+        """Становится существующим покупателем"""
+        global registered_users
+        if registered_users:
+            username = random.choice(registered_users)
+            password = "user123"
+            
+            if self.login(username, password):
+                self.user_role = 'customer'
+                logging.info(f"🛒 Customer {username} started shopping")
+    
+    def become_existing_admin(self):
+        """Становится существующим админом"""
+        global registered_admins
+        if registered_admins:
+            username = random.choice(registered_admins)
+            password = "admin123"
+            
+            if self.login(username, password):
+                self.user_role = 'admin'
+                logging.info(f"🔧 Admin {username} started maintenance")
+    
+    def wait_for_next_phase(self):
+        """Ожидает следующей фазы"""
+        self.user_role = 'waiting'
 
-    @task(1)
-    def add_products_bulk(self):
-        """Добавляет товары массово для достижения цели"""
+    @task(20)
+    def execute_role_task(self):
+        """Выполняет задачи в зависимости от роли и фазы"""
+        global current_phase
+        
+        if self.user_role == 'admin' and current_phase == 1:
+            self.admin_add_products()
+        elif self.user_role == 'user' and current_phase == 2:
+            self.user_wait()
+        elif self.user_role == 'customer' and current_phase == 3:
+            self.customer_browse_and_shop()
+        elif self.user_role == 'admin' and current_phase == 3:
+            self.admin_maintain_stock()
+        elif self.user_role == 'waiting':
+            self.wait_for_role_assignment()
+    
+    def admin_add_products(self):
+        """Админская задача: добавление товаров в фазе 1"""
         global current_phase, products_count
         
-        if current_phase != 1 or not self.token:
+        if not self.token:
             return
             
         # Проверяем количество товаров
@@ -142,7 +234,7 @@ class PhaseOneAdmin(BaseUser):
             return
         
         # Добавляем товары пачками
-        for _ in range(10):  # Добавляем по 10 товаров за раз
+        for _ in range(5):  # Добавляем по 5 товаров за раз
             category = random.choice(CATEGORIES)
             product_names = PRODUCT_NAMES.get(category, ["Generic Product"])
             base_name = random.choice(product_names)
@@ -160,68 +252,58 @@ class PhaseOneAdmin(BaseUser):
                     logging.error(f"Failed to create product: {response.status_code} - {response.text}")
             except Exception as e:
                 logging.error(f"Error creating product: {e}")
-
-
-class PhaseTwoUser(BaseUser):
-    """Фаза 2: Регистрация пользователей"""
-    weight = 3
-    wait_time = between(1, 3)
-
-    def on_start(self):
-        global current_phase, registered_users
-        
-        if current_phase != 2:
-            return
-            
-        # Создаем уникального пользователя
-        user_num = len(registered_users) + 1
-        username = f"user_{user_num}_{random.randint(1000, 9999)}"
-        password = "user123"
-        
-        if self.register_user(username, password):
-            if self.login(username, password):
-                with phase_lock:
-                    registered_users.append(username)
-                    
-                    # Переходим к фазе 3 когда достаточно пользователей
-                    if len(registered_users) >= 50:
-                        if current_phase == 2:
-                            current_phase = 3
-                            logging.info(f"🎉 PHASE 2 COMPLETE! Users registered: {len(registered_users)}. Moving to PHASE 3...")
-
-    @task(1)
-    def wait_for_phase_three(self):
-        """Ожидает начала третьей фазы"""
-        time.sleep(1)
-
-
-class PhaseThreeCustomer(BaseUser):
-    """Фаза 3: Активная работа покупателей"""
-    weight = 8
-    wait_time = between(1, 4)
     
-    viewed_products = []
-    cart_items = {}
-
-    def on_start(self):
-        global current_phase, registered_users
-        
-        if current_phase != 3 or not registered_users:
+    def user_wait(self):
+        """Пользователь ожидает фазы 3"""
+        time.sleep(2)
+    
+    def customer_browse_and_shop(self):
+        """Покупательская активность в фазе 3"""
+        if not self.token:
             return
             
-        # Используем существующего пользователя
-        username = random.choice(registered_users)
-        password = "user123"
+        # Выбираем случайную активность
+        activity = random.choice(['browse', 'add_to_cart', 'modify_cart', 'checkout', 'check_orders'])
         
-        if self.login(username, password):
-            logging.info(f"Customer {username} started shopping")
+        if activity == 'browse':
+            self.browse_products()
+        elif activity == 'add_to_cart' and self.viewed_products:
+            self.add_to_cart()
+        elif activity == 'modify_cart' and self.cart_items:
+            self.modify_cart()
+        elif activity == 'checkout' and self.cart_items:
+            self.checkout()
+        elif activity == 'check_orders':
+            self.check_orders()
+    
+    def admin_maintain_stock(self):
+        """Админская задача: поддержание товаров в фазе 3"""
+        if not self.token:
+            return
+            
+        if random.random() < 0.7:  # 70% пополнение товаров
+            self.restock_products()
+        else:  # 30% добавление новых товаров
+            self.add_new_products()
+    
+    def wait_for_role_assignment(self):
+        """Ожидание назначения роли"""
+        global current_phase
+        time.sleep(2)
+        
+        # Пытаемся переназначить роль только если фаза изменилась
+        if current_phase == 2 and self.user_role == 'waiting' and len(registered_users) < 50:
+            self.become_user()
+        elif current_phase == 3 and self.user_role == 'waiting':
+            if len(registered_users) > 0:
+                if random.random() < 0.1 and len(registered_admins) > 0:
+                    self.become_existing_admin()
+                else:
+                    self.become_existing_customer()
 
-    @task(15)
+    # Методы из старых классов (с небольшими изменениями)
     def browse_products(self):
         """Просматривает товары по категориям"""
-        if current_phase != 3 or not self.token:
-            return
-            
         category = random.choice(CATEGORIES)
         try:
             response = self.client.get(f"/api/products/?category={category}", headers=self.headers)
@@ -234,17 +316,16 @@ class PhaseThreeCustomer(BaseUser):
                     product_id = product.get("product_id") or product.get("id")
                     if product_id:
                         self.viewed_products.append(product_id)
-                        self.viewed_products = self.viewed_products[-20:]  # Храним последние 20
+                        self.viewed_products = self.viewed_products[-20:]
                         
                         # Просматриваем детали товара
                         self.client.get(f"/api/products/{product_id}", headers=self.headers)
         except Exception as e:
             logging.error(f"Error browsing products: {e}")
 
-    @task(8)
     def add_to_cart(self):
         """Добавляет товары в корзину"""
-        if current_phase != 3 or not self.token or not self.viewed_products:
+        if not self.viewed_products:
             return
             
         product_id = random.choice(self.viewed_products)
@@ -256,7 +337,6 @@ class PhaseThreeCustomer(BaseUser):
         try:
             response = self.client.post("/cart-api/cart/items", headers=self.headers, json=cart_data)
             if response.status_code in [200, 201]:
-                # Сохраняем информацию о товаре в корзине
                 cart_response = response.json()
                 if isinstance(cart_response, dict) and 'items' in cart_response:
                     for item in cart_response['items']:
@@ -265,10 +345,9 @@ class PhaseThreeCustomer(BaseUser):
         except Exception as e:
             logging.error(f"Error adding to cart: {e}")
 
-    @task(3)
     def modify_cart(self):
         """Изменяет количество товаров в корзине"""
-        if current_phase != 3 or not self.token or not self.cart_items:
+        if not self.cart_items:
             return
             
         item_id = random.choice(list(self.cart_items.keys()))
@@ -287,66 +366,33 @@ class PhaseThreeCustomer(BaseUser):
             except Exception as e:
                 logging.error(f"Error updating cart item: {e}")
 
-    @task(2)
     def checkout(self):
         """Оформляет заказ"""
-        if current_phase != 3 or not self.token or not self.cart_items:
-            return
-            
         try:
             response = self.client.post("/cart-api/cart/checkout", headers=self.headers)
             if response.status_code in [200, 201]:
-                self.cart_items = {}  # Очищаем корзину
+                self.cart_items = {}
                 logging.info(f"Order completed by {self.username}")
         except Exception as e:
             logging.error(f"Error during checkout: {e}")
 
-    @task(1)
     def check_orders(self):
         """Проверяет свои заказы"""
-        if current_phase != 3 or not self.token:
-            return
-            
         try:
             self.client.get("/user-api/users/me/orders", headers=self.headers)
             self.client.get("/user-api/users/me/profile", headers=self.headers)
         except Exception as e:
             logging.error(f"Error checking orders: {e}")
 
-
-class PhaseThreeAdmin(BaseUser):
-    """Фаза 3: Администраторы поддерживают баланс товаров"""
-    weight = 1
-    wait_time = between(5, 15)
-
-    def on_start(self):
-        global current_phase, registered_admins
-        
-        if current_phase != 3 or not registered_admins:
-            return
-            
-        # Используем существующего админа
-        username = random.choice(registered_admins)
-        password = "admin123"
-        
-        if self.login(username, password):
-            logging.info(f"Admin {username} started maintenance work")
-
-    @task(5)
     def restock_products(self):
         """Пополняет товары которые заканчиваются"""
-        if current_phase != 3 or not self.token:
-            return
-            
         try:
-            # Получаем все товары
             response = self.client.get("/api/products/", headers=self.headers)
             if response.status_code == 200:
                 data = response.json()
                 items = data.get('items', []) if isinstance(data, dict) else data
                 
                 if items:
-                    # Находим товары с низкими остатками
                     low_stock_products = [
                         p for p in items 
                         if isinstance(p, dict) and p.get('stock_count', 0) < 20
@@ -356,7 +402,6 @@ class PhaseThreeAdmin(BaseUser):
                         product = random.choice(low_stock_products)
                         product_id = product.get('product_id') or product.get('id')
                         
-                        # Пополняем остатки
                         updated_data = {
                             "name": product.get('name'),
                             "category": product.get('category'),
@@ -369,12 +414,8 @@ class PhaseThreeAdmin(BaseUser):
         except Exception as e:
             logging.error(f"Error restocking products: {e}")
 
-    @task(2)
     def add_new_products(self):
         """Добавляет новые товары"""
-        if current_phase != 3 or not self.token:
-            return
-            
         category = random.choice(CATEGORIES)
         product_names = PRODUCT_NAMES.get(category, ["New Product"])
         base_name = random.choice(product_names)
