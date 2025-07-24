@@ -30,6 +30,7 @@ def health_check(response: Response):
     Возвращает 503 Service Unavailable, если БД недоступна.
     """
     metrics_collector = get_metrics_collector()
+    request_start_time = time.time()
     
     try:
         cluster = Cluster([CASSANDRA_HOST], port=CASSANDRA_PORT)
@@ -41,12 +42,18 @@ def health_check(response: Response):
         if metrics_collector:
             query_duration = time.time() - query_start_time
             metrics_collector.record_db_query('health_check', query_duration)
+            # Записываем HTTP запрос
+            request_duration = time.time() - request_start_time
+            metrics_collector.record_request("GET", "/system/health", 200, request_duration)
         
         session.shutdown()
         cluster.shutdown()
         return {"status": "ok", "database_connection": "ok"}
     except NoHostAvailable:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+        if metrics_collector:
+            request_duration = time.time() - request_start_time
+            metrics_collector.record_request("GET", "/system/health", 503, request_duration)
         return {"status": "error", "database_connection": "unavailable"}
     except Exception as e:
         response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR

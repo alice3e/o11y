@@ -111,27 +111,14 @@ metrics_collector = MetricsCollector()
 def setup_metrics(app, cassandra_session=None):
     """Настройка метрик для FastAPI приложения"""
     
-    # Настройка автоматической инструментации
-    instrumentator = Instrumentator(
-        should_group_status_codes=False,
-        should_ignore_untemplated=True,
-        should_respect_env_var=True,
-        should_instrument_requests_inprogress=True,
-        excluded_handlers=["/metrics"],
-        env_var_name="ENABLE_METRICS",
-        inprogress_name="http_requests_inprogress",
-        inprogress_labels=True,
-    )
-    
-    instrumentator.instrument(app)
-    # Экспортируем метрики на root level, игнорируя root_path
-    instrumentator.expose(app, endpoint="/metrics", should_gzip=True, include_in_schema=False)
-    
     # Обновляем сессию в сборщике метрик
     if cassandra_session:
         metrics_collector.update_cassandra_session(cassandra_session)
     
-    return instrumentator
+    # Простое логирование что метрики настроены
+    print("Metrics collector configured with Cassandra session")
+    
+    return None
 
 
 def get_metrics():

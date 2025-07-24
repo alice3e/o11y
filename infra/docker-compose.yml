@@ -35,7 +35,7 @@ services:
       - CASSANDRA_HOST=cassandra
       - SECRET_KEY=supersecretkey123
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/system/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/system/health"]
       interval: 10s
       timeout: 5s
       retries: 5

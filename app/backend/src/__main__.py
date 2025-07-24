@@ -37,7 +37,6 @@ app = FastAPI(
     docs_url="/swagger",
     redoc_url=None,
     openapi_url="/openapi.json",
-    root_path="/api",
     lifespan=lifespan
 )
 
@@ -48,12 +47,12 @@ app.include_router(products_router)
 
 # --- Эндпоинт для метрик ---
 from fastapi import Response
-from .services.metrics import get_metrics
+from prometheus_client import generate_latest
 
 @app.get("/metrics")
 def metrics():
     """Эндпоинт для получения метрик Prometheus"""
-    return Response(content=get_metrics(), media_type="text/plain")
+    return Response(content=generate_latest(), media_type="text/plain")
 
 # --- Корневой эндпоинт API ---
 @app.get("/")
