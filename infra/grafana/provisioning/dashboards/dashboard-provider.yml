@@ -27,3 +27,13 @@ providers:
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards/user-service
+
+
+  - name: 'order-service'
+    orgId: 1
+    folder: 'order-service'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/order-service
