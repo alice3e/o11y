@@ -6,6 +6,11 @@ import uuid
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 from jose import JWTError, jwt
+import logging
+
+# 1. Импорт необходимых классов из prometheus_client
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Counter, Histogram
 
 # Настройки
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
@@ -13,11 +18,45 @@ ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:80
 SECRET_KEY = os.environ.get("SECRET_KEY", "supersecretkey123")
 ALGORITHM = "HS256"
 
-# In-memory хранилище корзин
+# In-memory хранилища
 carts_db: Dict[str, Dict[str, Any]] = {}
-
-# In-memory хранилище недавно просмотренных товаров
 recent_views_db: Dict[str, List[Dict]] = {}
+
+# Настройка логирования
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# Создание приложения FastAPI
+app = FastAPI()
+
+# 2. Инструментация приложения и определение кастомных метрик
+instrumentator = Instrumentator(excluded_handlers=["/health"]).instrument(app).expose(app)
+
+# Метрика для отслеживания стоимости и размера корзины при checkout
+CART_VALUE_CENTS = Histogram(
+    'cart_value_cents',
+    'The value of a cart in cents at checkout',
+    buckets=[1000, 2500, 5000, 7500, 10000, 15000, 20000, 50000]  # Бакеты от $10 до $500
+)
+CART_ITEMS_COUNT = Histogram(
+    'cart_items_count',
+    'Total number of items (sum of quantities) in a cart at checkout',
+    buckets=[1, 2, 3, 5, 8, 13, 21]  # Последовательность Фибоначчи для малых чисел
+)
+
+# Метрика для отслеживания популярных товаров
+ITEMS_ADDED_TO_CART_TOTAL = Counter(
+    'items_added_to_cart_total',
+    'Total number of times a product has been added to a cart',
+    ['product_name']
+)
+
+# Метрика для отслеживания общего числа оформленных заказов
+CHECKOUTS_TOTAL = Counter(
+    'checkouts_total',
+    'Total number of successful checkouts initiated from cart-service'
+)
+
 
 # Модели данных
 class CartItemCreate(BaseModel):
@@ -43,149 +82,56 @@ class Category(BaseModel):
     name: str
     product_count: int
 
-class PaginationMetadata(BaseModel):
-    total: int
-    page: int
-    pages: int
-    has_next: bool
-    has_prev: bool
-
-class ProductOut(BaseModel):
-    product_id: UUID4
-    name: str
-    category: str
-    price: float
-
-class PaginatedProducts(PaginationMetadata):
-    items: List[ProductOut]
-
 class RecentView(BaseModel):
     product_id: UUID4
     viewed_at: str
 
 # Вспомогательные функции
 async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)) -> str:
-    """Получение идентификатора пользователя из заголовка Authorization или X-User-ID"""
     if x_user_id:
         return x_user_id
-    
     if not authorization:
         raise HTTPException(status_code=401, detail="Authorization header missing")
-    
-    # Извлекаем user_id из токена
     parts = authorization.split()
     if len(parts) != 2 or parts[0].lower() != "bearer":
         raise HTTPException(status_code=401, detail="Invalid authorization header")
-    
     token = parts[1]
-    
-    # Пытаемся декодировать JWT для получения username
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         username = payload.get("sub")
         if username:
             return username
     except JWTError:
-        # Если не удалось декодировать, используем токен как идентификатор
         pass
-    
-    # Возвращаем токен как идентификатор пользователя
     return token
 
 async def get_product_info(product_id: UUID4) -> dict:
-    """Получение информации о товаре из бэкенд-сервиса"""
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACKEND_URL}/products/{product_id}")
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Product service unavailable")
+            response = await client.get(f"{BACKEND_URL}/api/products/{product_id}")
+            response.raise_for_status()
             return response.json()
-    except httpx.RequestError:
+    except httpx.RequestError as e:
+        logger.error(f"Could not connect to backend service: {e}")
         raise HTTPException(status_code=503, detail="Product service unavailable")
-
-async def get_categories() -> List[Category]:
-    """Получение списка категорий из бэкенд-сервиса"""
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACKEND_URL}/products/categories/list")
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Product service unavailable")
-            return [Category(**category) for category in response.json()]
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Product service unavailable")
-
-async def get_products_by_category(
-    category: str, 
-    skip: int = 0, 
-    limit: int = 100,
-    sort_by: Optional[str] = None,
-    sort_order: str = "asc",
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None
-) -> PaginatedProducts:
-    """Получение товаров по категории из бэкенд-сервиса с пагинацией, сортировкой и фильтрацией"""
-    try:
-        query_params = {
-            "skip": skip,
-            "limit": limit
-        }
-        if sort_by:
-            query_params["sort_by"] = sort_by
-            query_params["sort_order"] = sort_order
-        if min_price is not None:
-            query_params["min_price"] = min_price
-        if max_price is not None:
-            query_params["max_price"] = max_price
-            
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                f"{BACKEND_URL}/products/by-category/{category}",
-                params=query_params
-            )
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Product service unavailable")
-            return response.json()
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Product service unavailable")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error from backend service: {e.response.status_code} - {e.response.text}")
+        if e.response.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Product with id {product_id} not found")
+        raise HTTPException(status_code=503, detail="Product service error")
 
 def get_user_cart(user_id: str) -> dict:
-    """Получение корзины пользователя или создание новой"""
     if user_id not in carts_db:
         carts_db[user_id] = {"items": {}}
     return carts_db[user_id]
 
 def calculate_cart_total(cart: dict) -> float:
-    """Расчет общей стоимости корзины"""
     return sum(item["total_price"] for item in cart["items"].values())
 
-def get_user_recent_views(user_id: str) -> list:
-    """Получение недавно просмотренных товаров пользователя"""
-    if user_id not in recent_views_db:
-        recent_views_db[user_id] = []
-    return recent_views_db[user_id]
-
 def add_recent_view(user_id: str, product_id: str):
-    """Добавление товара в список недавно просмотренных"""
-    views = get_user_recent_views(user_id)
-    
-    # Проверяем, есть ли уже этот товар в списке
-    for view in views:
-        if view["product_id"] == product_id:
-            # Если есть, обновляем время просмотра и перемещаем в начало списка
-            views.remove(view)
-            break
-    
-    # Добавляем товар в начало списка
-    views.insert(0, {
-        "product_id": product_id,
-        "viewed_at": datetime.now().isoformat()
-    })
-    
-    # Ограничиваем список 10 последними просмотренными товарами
-    recent_views_db[user_id] = views[:10]
-
-# Создание приложения FastAPI
-app = FastAPI()
+    views = recent_views_db.setdefault(user_id, [])
+    views.insert(0, {"product_id": product_id, "viewed_at": datetime.now().isoformat()})
+    recent_views_db[user_id] = [dict(t) for t in {tuple(d.items()) for d in views}][:10]
 
 # Маршруты API
 @app.get("/")
@@ -194,38 +140,10 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    """Health check эндпоинт для проверки состояния сервиса"""
     return {"status": "ok", "service": "cart-service"}
-
-@app.get("/categories/", response_model=List[Category])
-async def get_all_categories():
-    """Получение списка всех категорий товаров"""
-    return await get_categories()
-
-@app.get("/products/category/{category}")
-async def get_category_products(
-    category: str, 
-    skip: int = 0, 
-    limit: int = 100,
-    sort_by: Optional[str] = None,
-    sort_order: str = "asc",
-    min_price: Optional[float] = None,
-    max_price: Optional[float] = None
-):
-    """Получение списка товаров по категории с пагинацией, сортировкой и фильтрацией"""
-    return await get_products_by_category(
-        category, 
-        skip, 
-        limit, 
-        sort_by, 
-        sort_order, 
-        min_price, 
-        max_price
-    )
 
 @app.get("/cart/", response_model=Cart)
 async def get_cart(user_id: str = Depends(get_user_id)):
-    """Получение текущей корзины пользователя"""
     cart = get_user_cart(user_id)
     items = list(cart["items"].values())
     total = calculate_cart_total(cart)
@@ -233,19 +151,16 @@ async def get_cart(user_id: str = Depends(get_user_id)):
 
 @app.post("/cart/items", response_model=CartItem)
 async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id)):
-    """Добавление товара в корзину"""
-    # Получаем информацию о товаре
     product = await get_product_info(item.product_id)
-    
-    # Проверяем наличие товара
-    if product["stock_count"] < item.quantity:
+    if product.get("quantity", 0) < item.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
     
-    # Добавляем товар в корзину
     cart = get_user_cart(user_id)
     item_id = str(uuid.uuid4())
     price = float(product["price"])
-    total_price = price * item.quantity
+    
+    # 3. Инкремент метрики популярности товара
+    ITEMS_ADDED_TO_CART_TOTAL.labels(product_name=product["name"]).inc()
     
     cart["items"][item_id] = {
         "id": item_id,
@@ -253,170 +168,91 @@ async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id))
         "name": product["name"],
         "price": price,
         "quantity": item.quantity,
-        "total_price": total_price
+        "total_price": price * item.quantity
     }
-    
     return cart["items"][item_id]
 
 @app.put("/cart/items/{item_id}", response_model=CartItem)
 async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id: str = Depends(get_user_id)):
-    """Изменение количества товара в корзине"""
     cart = get_user_cart(user_id)
-    
-    # Проверяем наличие товара в корзине
     if str(item_id) not in cart["items"]:
         raise HTTPException(status_code=404, detail="Item not found in cart")
     
-    # Получаем текущий товар из корзины
     cart_item = cart["items"][str(item_id)]
-    
-    # Получаем информацию о товаре для проверки наличия
     product = await get_product_info(UUID4(cart_item["product_id"]))
-    
-    # Проверяем наличие товара
-    if product["stock_count"] < item_update.quantity:
+    if product.get("quantity", 0) < item_update.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
-    
-    # Обновляем количество и стоимость
+        
     cart_item["quantity"] = item_update.quantity
     cart_item["total_price"] = float(product["price"]) * item_update.quantity
-    
     return cart_item
 
 @app.delete("/cart/items/{item_id}")
 async def remove_from_cart(item_id: UUID4, user_id: str = Depends(get_user_id)):
-    """Удаление товара из корзины"""
     cart = get_user_cart(user_id)
-    
-    # Проверяем наличие товара в корзине
     if str(item_id) not in cart["items"]:
         raise HTTPException(status_code=404, detail="Item not found in cart")
-    
-    # Удаляем товар из корзины
     del cart["items"][str(item_id)]
-    
     return {"message": "Item removed from cart"}
 
-@app.get("/cart/total")
-async def get_cart_total(user_id: str = Depends(get_user_id)):
-    """Получение общей стоимости корзины"""
-    cart = get_user_cart(user_id)
-    total = calculate_cart_total(cart)
-    return {"total": total}
-
 @app.post("/cart/checkout")
-async def checkout(background_tasks: BackgroundTasks, authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)):
-    """Оформление заказа из корзины"""
-    # Получаем user_id
+async def checkout(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)):
     user_id = await get_user_id(authorization, x_user_id)
-    
     cart = get_user_cart(user_id)
     
-    # Проверяем, что корзина не пуста
     if not cart["items"]:
         raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # 4. Сбор метрик по корзине ПЕРЕД отправкой заказа и очисткой
+    cart_total_value = calculate_cart_total(cart)
+    cart_total_items = sum(item["quantity"] for item in cart["items"].values())
+
+    CART_VALUE_CENTS.observe(cart_total_value * 100) # Переводим в центы для точности
+    CART_ITEMS_COUNT.observe(cart_total_items)
+    CHECKOUTS_TOTAL.inc()
     
-    # Создаем заказ
     try:
         async with httpx.AsyncClient() as client:
-            # Подготавливаем данные для заказа
-            order_items = []
-            for item in cart["items"].values():
-                order_items.append({
-                    "product_id": item["product_id"],
-                    "name": item["name"],
-                    "price": item["price"],
-                    "quantity": item["quantity"]
-                })
-            
-            # Отправляем запрос на создание заказа
+            order_items = [{"product_id": v["product_id"], "name": v["name"], "price": v["price"], "quantity": v["quantity"]} for v in cart["items"].values()]
             headers = {"X-User-ID": user_id}
-            
-            # Если есть заголовок Authorization, передаем его
             if authorization:
                 headers["Authorization"] = authorization
             
-            order_data = {
-                "items": order_items,
-                "total": calculate_cart_total(cart)
-            }
+            order_data = {"items": order_items, "total": cart_total_value}
             
-            response = await client.post(
-                f"{ORDER_SERVICE_URL}/orders/",
-                json=order_data,
-                headers=headers
-            )
+            response = await client.post(f"{ORDER_SERVICE_URL}/orders/", json=order_data, headers=headers)
+            response.raise_for_status()
             
-            if response.status_code != 200:
-                raise HTTPException(status_code=503, detail="Order service unavailable")
-            
-            # Очищаем корзину после успешного оформления заказа
+            # Очищаем корзину только после успешного оформления заказа
             cart["items"] = {}
-            
             return response.json()
-    except httpx.RequestError:
+            
+    except httpx.RequestError as e:
+        logger.error(f"Could not connect to order service: {e}")
         raise HTTPException(status_code=503, detail="Order service unavailable")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error from order service: {e.response.status_code} - {e.response.text}")
+        raise HTTPException(status_code=e.response.status_code, detail=f"Order service error: {e.response.text}")
 
 @app.delete("/cart/")
 async def clear_cart(user_id: str = Depends(get_user_id)):
-    """Очистка корзины"""
     cart = get_user_cart(user_id)
     cart["items"] = {}
     return {"message": "Cart cleared"}
 
-# Новые API для отслеживания просмотренных товаров
 @app.post("/products/{product_id}/view")
 async def record_product_view(product_id: UUID4, user_id: str = Depends(get_user_id)):
-    """Запись о просмотре товара пользователем"""
-    # Проверяем существование товара
     await get_product_info(product_id)
-    
-    # Добавляем товар в список недавно просмотренных
     add_recent_view(user_id, str(product_id))
-    
     return {"message": "Product view recorded"}
 
 @app.get("/products/recent-views", response_model=List[RecentView])
 async def get_recent_views(user_id: str = Depends(get_user_id)):
-    """Получение списка недавно просмотренных товаров пользователя"""
-    views = get_user_recent_views(user_id)
-    return views
-
-# Рекомендации товаров на основе просмотренных
-@app.get("/products/recommendations")
-async def get_recommendations(user_id: str = Depends(get_user_id)):
-    """Получение рекомендаций товаров на основе просмотренных"""
-    views = get_user_recent_views(user_id)
-    
-    if not views:
-        # Если нет просмотренных товаров, возвращаем популярные товары
-        return await get_category_products("Популярные", limit=10)
-    
-    # Собираем категории просмотренных товаров
-    viewed_categories = []
-    for view in views:
-        try:
-            product = await get_product_info(view["product_id"])
-            if product["category"] not in viewed_categories:
-                viewed_categories.append(product["category"])
-        except HTTPException:
-            # Игнорируем несуществующие товары
-            continue
-    
-    # Если не нашли категорий, возвращаем популярные товары
-    if not viewed_categories:
-        return await get_category_products("Популярные", limit=10)
-    
-    # Получаем рекомендации из первой категории
-    recommendations = await get_products_by_category(viewed_categories[0], limit=10)
-    
-    return recommendations
+    return recent_views_db.get(user_id, [])
 
 # Административные маршруты
 @app.get("/carts/")
 async def get_all_carts(admin: Optional[bool] = Header(False)):
-    """Получение всех корзин (только для администраторов)"""
     if not admin:
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    return carts_db 
+    return carts_db

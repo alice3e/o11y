@@ -37,3 +37,12 @@ providers:
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards/order-service
+
+  - name: 'cart-service'
+    orgId: 1
+    folder: 'cart-service'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/cart-service
