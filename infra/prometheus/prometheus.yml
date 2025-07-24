@@ -48,7 +48,7 @@ scrape_configs:
     metrics_path: /metrics
     scheme: http
     static_configs:
-      - targets: ['order-service:8003']
+      - targets: ['order-service:8002']
 
   # --- Сбор метрик с Cassandra (MCAC Agent) ---
   - job_name: "cassandra-mcac"
