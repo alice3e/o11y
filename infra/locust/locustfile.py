@@ -59,17 +59,24 @@ class ShoppingUser(HttpUser):
                     response.failure(f"Failed to login. Status: {response.status_code}, Text: {response.text}")
             except (JSONDecodeError, KeyError):
                 response.failure("Failed to parse login token from response.")
-
+                
     @task(10)
     def browse_products(self):
-        """Просмотр товаров: категории -> список -> карточка товара."""
-        if not self.token: return
+        """
+        Имитирует просмотр товаров: получает список категорий, выбирает одну,
+        "пролистывает" несколько страниц и открывает детальную страницу товара.
+        """
+        if not self.token:
+            return
 
+        # --- Шаг 1: Получаем список категорий ---
         with self.client.get("/api/products/categories/list", headers=self.headers, catch_response=True, name="/api/products/categories/list") as response:
             try:
+                if response.status_code != 200:
+                    response.failure("Failed to get categories list")
+                    return
                 categories = response.json()
-                if not categories or response.status_code != 200:
-                    response.failure("Failed to get categories list or list is empty")
+                if not categories:
                     return
             except JSONDecodeError:
                 response.failure("Non-JSON response for categories list")
@@ -77,28 +84,76 @@ class ShoppingUser(HttpUser):
         
         category_name = random.choice(categories)["name"]
         
-        url = f"/api/products/?category={category_name}&limit=20"
+        # --- Шаг 2: Делаем первый запрос, чтобы узнать, сколько всего страниц ---
+        limit_per_page = 20 # Сколько товаров на одной странице
+        current_skip = 0
+        total_pages = 1
+        products_on_last_page = []
+
+        url = f"/api/products/?category={category_name}&skip={current_skip}&limit={limit_per_page}"
         with self.client.get(url, headers=self.headers, catch_response=True, name="/api/products/?category=[category]") as response:
             try:
-                products_data = response.json()
                 if response.status_code != 200:
-                    response.failure(f"Failed to browse category {category_name}")
+                    response.failure(f"Failed to browse initial page for category {category_name}")
                     return
-                products = products_data.get("items", [])
-                if not products: return
+                
+                data = response.json()
+                total_pages = data.get("pages", 1)
+                products_on_last_page = data.get("items", [])
+                
             except JSONDecodeError:
-                response.failure("Non-JSON response for product list")
+                response.failure("Non-JSON response for initial product list")
                 return
 
-        product_to_view = random.choice(products)
+        # --- Шаг 3: Определяем, сколько страниц "пролистать" ---
+        pages_to_scroll = random.randint(0, 5) # Пролистает от 0 до 4 ДОПОЛНИТЕЛЬНЫХ страниц
+        
+        if total_pages > 1: # Только если есть куда листать
+            for i in range(pages_to_scroll):
+                current_skip += limit_per_page
+                
+                # Защита, чтобы не выйти за пределы существующих страниц
+                if current_skip >= (total_pages * limit_per_page):
+                    break
+
+                # Имитация паузы между пролистыванием страниц
+                self.wait()
+
+                scroll_url = f"/api/products/?category={category_name}&skip={current_skip}&limit={limit_per_page}"
+                with self.client.get(scroll_url, headers=self.headers, catch_response=True, name="/api/products/?category=[category]") as response:
+                    try:
+                        if response.status_code != 200:
+                            # Это не критичная ошибка, просто прекращаем листать
+                            break 
+                        
+                        data = response.json()
+                        products = data.get("items", [])
+                        
+                        if not products: # Если страница пустая, прекращаем
+                            break
+                        
+                        products_on_last_page = products
+
+                    except JSONDecodeError:
+                        break # Прекращаем, если ответ не JSON
+
+        # --- Шаг 4: Выбираем случайный товар с последней просмотренной страницы ---
+        if not products_on_last_page:
+            return
+
+        product_to_view = random.choice(products_on_last_page)
+        print(products_on_last_page)
         product_id = product_to_view.get("product_id")
-        if not product_id: return
+        if not product_id:
+            return
             
+        # Запоминаем ID товара для будущих действий (добавление в корзину)
         self.viewed_product_ids.append(product_id)
-        self.viewed_product_ids = self.viewed_product_ids[-20:]
+        self.viewed_product_ids = self.viewed_product_ids[-20:] # Ограничиваем историю
 
+        # --- Шаг 5: Открываем детальную карточку товара ---
         self.client.get(f"/api/products/{product_id}", headers=self.headers, name="/api/products/[product_id]")
-
+        
     @task(5)
     def manage_cart(self):
         """Работа с корзиной: добавление, просмотр, изменение/удаление."""
