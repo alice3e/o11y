@@ -14,35 +14,9 @@ import logging
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
 
+
 # Импортируем модуль трейсинга
-try:
-    from src.tracing import setup_tracing, get_tracer
-    TRACING_ENABLED = True
-    print("Successfully loaded tracing module")
-except ImportError:
-    print("Tracing module not found, tracing will be disabled")
-    TRACING_ENABLED = False
-    
-    # Создаем mock объекты для трейсинга
-    class MockSpan:
-        def __init__(self):
-            pass
-        def __enter__(self):
-            return self
-        def __exit__(self, exc_type, exc_val, exc_tb):
-            pass
-        def set_attribute(self, key, value):
-            pass
-    
-    class MockTracer:
-        def start_as_current_span(self, name):
-            return MockSpan()
-    
-    def setup_tracing(app):
-        return MockTracer()
-    
-    def get_tracer():
-        return MockTracer()
+from src.tracing import setup_tracing, get_tracer
 
 
 # Configure logging
