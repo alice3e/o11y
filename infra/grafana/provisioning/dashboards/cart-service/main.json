@@ -334,7 +334,7 @@
               }
             ]
           },
-          "unit": "currencyUSD"
+          "unit": "currencyRUB"
         },
         "overrides": []
       },
@@ -369,8 +369,10 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
+          "editorMode": "code",
           "expr": "sum(rate(cart_value_cents_sum{job=\"cart-service\"}[5m])) / sum(rate(cart_value_cents_count{job=\"cart-service\"}[5m])) / 100",
           "legendFormat": "Avg Cart Value",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1070,5 +1072,5 @@
   "timezone": "",
   "title": "Cart Service Dashboard",
   "uid": "cart-service-dashboard",
-  "version": 2
+  "version": 3
 }

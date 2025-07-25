@@ -177,21 +177,21 @@
             "mode": "thresholds"
           },
           "mappings": [],
-          "max": 100,
-          "min": 0,
+          "max": 0,
+          "min": 100,
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "dark-red"
               },
               {
                 "color": "orange",
-                "value": 1
+                "value": 80
               },
               {
-                "color": "red",
-                "value": 5
+                "color": "green",
+                "value": 100
               }
             ]
           },
@@ -1118,5 +1118,5 @@
   "timezone": "",
   "title": "Backend API Service",
   "uid": "backend-api-dashboard",
-  "version": 9
+  "version": 10
 }
