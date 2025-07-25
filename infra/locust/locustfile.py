@@ -153,14 +153,28 @@ class ShoppingUser(HttpUser):
 
         # --- Шаг 5: Открываем детальную карточку товара ---
         self.client.get(f"/api/products/{product_id}", headers=self.headers, name="/api/products/[product_id]")
-        
     @task(5)
     def manage_cart(self):
-        """Работа с корзиной: добавление, просмотр, изменение/удаление."""
-        if not self.token or not self.viewed_product_ids: return
+        """
+        Работа с корзиной: добавление, просмотр, изменение/удаление.
+        Использует product_id для идентификации элементов в PUT/DELETE запросах.
+        """
+        if not self.token or not self.viewed_product_ids:
+            return
             
-        product_id_to_add = random.choice(self.viewed_product_ids)
+        # Выбираем товар, которого еще нет в корзине, чтобы избежать конфликтов
+        # (в реальном API добавление существующего товара могло бы увеличивать его количество)
+        product_id_to_add = None
+        for pid in self.viewed_product_ids:
+            if pid not in self.cart_items:
+                product_id_to_add = pid
+                break
         
+        # Если все просмотренные товары уже в корзине, ничего не делаем
+        if not product_id_to_add:
+            return
+
+        # --- Шаг 1: Добавляем товар в корзину ---
         with self.client.post(
             "/cart-api/cart/items",
             headers=self.headers,
@@ -171,31 +185,43 @@ class ShoppingUser(HttpUser):
             try:
                 if response.status_code == 200:
                     item_data = response.json()
-                    self.cart_items[item_data["id"]] = item_data["product_id"]
+                    # ИСПРАВЛЕНИЕ: Сохраняем product_id, так как он используется для идентификации
+                    product_id_in_cart = item_data.get("product_id")
+                    if product_id_in_cart:
+                        self.cart_items.append(product_id_in_cart)
                 else:
                     response.failure("Failed to add item to cart")
-                    return
+                    return # Если не смогли добавить, выходим
             except (JSONDecodeError, KeyError):
                 response.failure("Failed to parse cart item from response.")
                 return
 
+        # --- Шаг 2: Смотрим состав корзины ---
         self.client.get("/cart-api/cart/", headers=self.headers, name="/cart-api/cart/ (view)")
         
+        # --- Шаг 3: С вероятностью 30% изменяем или удаляем один из товаров в корзине ---
         if self.cart_items and random.random() < 0.3:
-            random_item_id = random.choice(list(self.cart_items.keys()))
+            # ИСПРАВЛЕНИЕ: Выбираем случайный product_id из тех, что в корзине
+            product_id_to_modify = random.choice(self.cart_items)
             
+            # 50% шанс на удаление
             if random.random() < 0.5:
-                with self.client.delete(f"/cart-api/cart/items/{random_item_id}", headers=self.headers, name="/cart-api/cart/items/[item_id] (delete)") as response:
+                with self.client.delete(
+                    f"/cart-api/cart/items/{product_id_to_modify}", 
+                    headers=self.headers, 
+                    name="/cart-api/cart/items/[product_id] (delete)"
+                ) as response:
                     if response.status_code == 200:
-                        del self.cart_items[random_item_id]
+                        # Удаляем из нашего локального состояния
+                        self.cart_items.remove(product_id_to_modify)
+            # 50% шанс на обновление
             else:
                 self.client.put(
-                    f"/cart-api/cart/items/{random_item_id}",
+                    f"/cart-api/cart/items/{product_id_to_modify}",
                     headers=self.headers,
                     json={"quantity": random.randint(1, 10)},
-                    name="/cart-api/cart/items/[item_id] (update)"
+                    name="/cart-api/cart/items/[product_id] (update)"
                 )
-
     @task(1)
     def checkout_and_check_orders(self):
         """Оформление заказа и проверка истории."""
