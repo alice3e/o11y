@@ -108,9 +108,11 @@ async def get_user_id(authorization: Optional[str] = Header(None), x_user_id: Op
 async def get_product_info(product_id: UUID4) -> dict:
     try:
         async with httpx.AsyncClient() as client:
-            response = await client.get(f"{BACKEND_URL}/api/products/{product_id}")
+            response = await client.get(f"{BACKEND_URL}/products/{product_id}")
             response.raise_for_status()
-            return response.json()
+            product_data = response.json()
+            logger.info(f"Product data received: {product_data}")
+            return product_data
     except httpx.RequestError as e:
         logger.error(f"Could not connect to backend service: {e}")
         raise HTTPException(status_code=503, detail="Product service unavailable")
@@ -152,7 +154,8 @@ async def get_cart(user_id: str = Depends(get_user_id)):
 @app.post("/cart/items", response_model=CartItem)
 async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id)):
     product = await get_product_info(item.product_id)
-    if product.get("quantity", 0) < item.quantity:
+    logger.info(f"Checking stock: product stock_count={product.get('stock_count')}, requested quantity={item.quantity}")
+    if product.get("stock_count", 0) < item.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
     
     cart = get_user_cart(user_id)
@@ -180,7 +183,7 @@ async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id:
     
     cart_item = cart["items"][str(item_id)]
     product = await get_product_info(UUID4(cart_item["product_id"]))
-    if product.get("quantity", 0) < item_update.quantity:
+    if product.get("stock_count", 0) < item_update.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
         
     cart_item["quantity"] = item_update.quantity
