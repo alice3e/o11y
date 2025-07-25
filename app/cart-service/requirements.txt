@@ -4,3 +4,11 @@ httpx
 pydantic
 python-jose[cryptography] 
 prometheus_fastapi_instrumentator
+
+# OpenTelemetry dependencies for tracing
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+opentelemetry-exporter-jaeger-thrift
+opentelemetry-exporter-otlp-proto-http
