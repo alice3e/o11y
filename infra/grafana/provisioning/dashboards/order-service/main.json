@@ -232,12 +232,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(http_requests_total{job=\"order-service\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"order-service\"}[5m]))) * 100 or on() vector(0)",
+          "editorMode": "code",
+          "expr": "(sum(rate(http_requests_total{job=\"order-service\", status=~\"5|4..\"}[5m])) / sum(rate(http_requests_total{job=\"order-service\"}[5m]))) * 100 or on() vector(0)",
           "legendFormat": "Error Rate",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Error Rate (5xx)",
+      "title": "Error Rate (4-5xx)",
       "type": "stat"
     },
     {
@@ -1171,5 +1173,5 @@
   "timezone": "",
   "title": "Order Service Dashboard",
   "uid": "order-service-dashboard",
-  "version": 1
+  "version": 2
 }

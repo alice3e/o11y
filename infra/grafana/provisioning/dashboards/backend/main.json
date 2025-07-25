@@ -230,12 +230,14 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(http_requests_total{job=\"backend-api\", status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"backend-api\"}[5m]))) * 100 or on() vector(0)",
+          "editorMode": "code",
+          "expr": "(sum(rate(http_requests_total{job=\"backend-api\", status_code=~\"2..\"}[5m])) / sum(rate(http_requests_total{job=\"backend-api\"}[5m]))) * 100 or on() vector(0)",
           "legendFormat": "Error Rate",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Error Rate (5xx)",
+      "title": "Success Rate (2..)",
       "type": "stat"
     },
     {
@@ -1116,5 +1118,5 @@
   "timezone": "",
   "title": "Backend API Service",
   "uid": "backend-api-dashboard",
-  "version": 6
+  "version": 9
 }
