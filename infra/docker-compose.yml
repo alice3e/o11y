@@ -48,9 +48,6 @@ services:
       context: ..
       dockerfile: app/cart-service/Dockerfile
     container_name: infra-cart-service
-    depends_on:
-      backend:
-        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
@@ -69,9 +66,6 @@ services:
       context: ..
       dockerfile: app/order-service/Dockerfile
     container_name: infra-order-service
-    depends_on:
-      backend:
-        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
@@ -90,13 +84,6 @@ services:
       context: ..
       dockerfile: app/user-service/Dockerfile
     container_name: infra-user-service
-    depends_on:
-      backend:
-        condition: service_healthy
-      cart-service:
-        condition: service_healthy
-      order-service:
-        condition: service_healthy
     environment:
       - CART_SERVICE_URL=http://cart-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
