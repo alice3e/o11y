@@ -178,10 +178,23 @@ async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id))
 @app.put("/cart/items/{item_id}", response_model=CartItem)
 async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id: str = Depends(get_user_id)):
     cart = get_user_cart(user_id)
-    if str(item_id) not in cart["items"]:
-        raise HTTPException(status_code=404, detail="Item not found in cart")
     
-    cart_item = cart["items"][str(item_id)]
+    # Сначала пробуем найти по item_id
+    actual_item_id = str(item_id)
+    if actual_item_id in cart["items"]:
+        cart_item = cart["items"][actual_item_id]
+    else:
+        # Если не найден по item_id, ищем по product_id
+        actual_item_id = None
+        for id, item in cart["items"].items():
+            if item["product_id"] == str(item_id):
+                actual_item_id = id
+                cart_item = item
+                break
+        
+        if not actual_item_id:
+            raise HTTPException(status_code=404, detail="Item not found in cart")
+    
     product = await get_product_info(UUID4(cart_item["product_id"]))
     if product.get("stock_count", 0) < item_update.quantity:
         raise HTTPException(status_code=400, detail="Not enough items in stock")
@@ -193,10 +206,27 @@ async def update_cart_item(item_id: UUID4, item_update: CartItemUpdate, user_id:
 @app.delete("/cart/items/{item_id}")
 async def remove_from_cart(item_id: UUID4, user_id: str = Depends(get_user_id)):
     cart = get_user_cart(user_id)
-    if str(item_id) not in cart["items"]:
-        raise HTTPException(status_code=404, detail="Item not found in cart")
-    del cart["items"][str(item_id)]
-    return {"message": "Item removed from cart"}
+    
+    # Сначала пробуем найти по item_id
+    actual_item_id = str(item_id)
+    if actual_item_id in cart["items"]:
+        del cart["items"][actual_item_id]
+        return {"message": "Item removed from cart"}
+    else:
+        # Если не найден по item_id, ищем по product_id и удаляем все такие товары
+        items_to_remove = []
+        for id, item in cart["items"].items():
+            if item["product_id"] == str(item_id):
+                items_to_remove.append(id)
+        
+        if not items_to_remove:
+            raise HTTPException(status_code=404, detail="Item not found in cart")
+        
+        # Удаляем все найденные товары
+        for item_id_to_remove in items_to_remove:
+            del cart["items"][item_id_to_remove]
+        
+        return {"message": f"Removed {len(items_to_remove)} items from cart"}
 
 @app.post("/cart/checkout")
 async def checkout(authorization: Optional[str] = Header(None), x_user_id: Optional[str] = Header(None)):
