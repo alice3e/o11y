@@ -197,6 +197,16 @@ services:
     depends_on:
       - prometheus
 
+  jaeger:
+    image: jaegertracing/jaeger:2.2.0
+    container_name: jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OpenTelemetry gRPC
+      - "4318:4318"   # OpenTelemetry HTTP
+      - "5778:5778"   # Configuration service
+    restart: unless-stopped
+
 volumes:
   cassandra_data:
   prometheus_data:
