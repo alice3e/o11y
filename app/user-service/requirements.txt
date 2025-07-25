@@ -6,3 +6,11 @@ python-multipart
 python-jose[cryptography]
 passlib[bcrypt] 
 prometheus-fastapi-instrumentator
+
+# OpenTelemetry dependencies for tracing
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+opentelemetry-exporter-jaeger-thrift
+opentelemetry-exporter-otlp-proto-http

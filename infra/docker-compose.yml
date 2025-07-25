@@ -41,7 +41,7 @@ services:
       - JAEGER_AGENT_PORT=6831
       - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
       - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=backend-service
       - OTEL_RESOURCE_ATTRIBUTES=service.name=backend-service,service.version=1.0.0
     healthcheck:
@@ -70,7 +70,7 @@ services:
       - JAEGER_AGENT_PORT=6831
       - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
       - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=cart-service
       - OTEL_RESOURCE_ATTRIBUTES=service.name=cart-service,service.version=1.0.0
     healthcheck:
@@ -99,7 +99,7 @@ services:
       - JAEGER_AGENT_PORT=6831
       - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
       - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=order-service
       - OTEL_RESOURCE_ATTRIBUTES=service.name=order-service,service.version=1.0.0
     healthcheck:
@@ -128,7 +128,7 @@ services:
       - JAEGER_AGENT_PORT=6831
       - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
       - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
-      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
       - OTEL_SERVICE_NAME=user-service
       - OTEL_RESOURCE_ATTRIBUTES=service.name=user-service,service.version=1.0.0
     healthcheck:
@@ -154,15 +154,6 @@ services:
       context: ..
       dockerfile: app/swagger-ui/Dockerfile
     container_name: infra-swagger-ui
-    depends_on:
-      backend:
-        condition: service_healthy
-      cart-service:
-        condition: service_healthy
-      order-service:
-        condition: service_healthy
-      user-service:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/swagger.json"]
       interval: 10s

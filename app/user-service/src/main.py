@@ -10,10 +10,39 @@ from passlib.context import CryptContext
 from jose import JWTError, jwt
 import logging
 
-
 # 1. Импортируем Instrumentator и Counter
 from prometheus_fastapi_instrumentator import Instrumentator
 from prometheus_client import Counter
+
+# Импортируем модуль трейсинга
+try:
+    from src.tracing import setup_tracing, get_tracer
+    TRACING_ENABLED = True
+    print("Successfully loaded tracing module")
+except ImportError:
+    print("Tracing module not found, tracing will be disabled")
+    TRACING_ENABLED = False
+    
+    # Создаем mock объекты для трейсинга
+    class MockSpan:
+        def __init__(self):
+            pass
+        def __enter__(self):
+            return self
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            pass
+        def set_attribute(self, key, value):
+            pass
+    
+    class MockTracer:
+        def start_as_current_span(self, name):
+            return MockSpan()
+    
+    def setup_tracing(app):
+        return MockTracer()
+    
+    def get_tracer():
+        return MockTracer()
 
 
 # Configure logging
@@ -29,6 +58,10 @@ ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:80
 
 # Создание приложения FastAPI
 app = FastAPI()
+
+# Инициализация OpenTelemetry трейсинга
+tracer = setup_tracing(app)
+logger.info("Tracing initialized for User Service")
 
 # Настройка CORS для поддержки запросов из браузера
 app.add_middleware(
@@ -212,50 +245,83 @@ async def health_check():
 @app.post("/users/register", response_model=User)
 async def register_user(user: UserCreate):
     """Регистрация нового пользователя"""
-    if user.username in users_db:
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # Определяем, является ли пользователь админом на основе username
-    is_admin = user.username.startswith("admin_")
-    
-    hashed_password = get_password_hash(user.password)
-    user_in_db = UserInDB(
-        username=user.username,
-        full_name=user.full_name,
-        phone=user.phone,
-        hashed_password=hashed_password,
-        id=f"{len(users_db) + 1:08d}",
-        created_at=datetime.now(),
-        total_spent=0.0,
-        is_admin=is_admin
-    )
-    users_db[user.username] = user_in_db
-    
+    with tracer.start_as_current_span("register_user") as span:
+        # Добавляем атрибуты в span
+        span.set_attribute("user.username", user.username)
+        span.set_attribute("user.full_name", user.full_name)
+        
+        if user.username in users_db:
+            span.set_attribute("registration.status", "failed")
+            span.set_attribute("registration.error", "username_exists")
+            raise HTTPException(status_code=400, detail="Username already registered")
+        
+        # Определяем, является ли пользователь админом на основе username
+        is_admin = user.username.startswith("admin_")
+        span.set_attribute("user.is_admin", is_admin)
+        
+        with tracer.start_as_current_span("password_hashing"):
+            hashed_password = get_password_hash(user.password)
+        
+        with tracer.start_as_current_span("user_creation"):
+            user_in_db = UserInDB(
+                username=user.username,
+                full_name=user.full_name,
+                phone=user.phone,
+                hashed_password=hashed_password,
+                id=f"{len(users_db) + 1:08d}",
+                created_at=datetime.now(),
+                total_spent=0.0,
+                is_admin=is_admin
+            )
+            span.set_attribute("user.id", user_in_db.id)
+            users_db[user.username] = user_in_db
+        
 
-    # Увеличиваем наш кастомный счетчик
-    users_registered_counter.inc()
+        # Увеличиваем наш кастомный счетчик
+        users_registered_counter.inc()
 
-    # Логируем информацию о созданном пользователе
-    admin_status = "ADMIN USER" if is_admin else "REGULAR USER"
-    logger.info(f"Registered {admin_status}: {user.username}")
-
-    return user_in_db
+        # Логируем информацию о созданном пользователе
+        admin_status = "ADMIN USER" if is_admin else "REGULAR USER"
+        logger.info(f"Registered {admin_status}: {user.username}")
+        
+        span.set_attribute("registration.status", "success")
+        return user_in_db
 
 @app.post("/token", response_model=Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Аутентификация пользователя и получение токена"""
-    user = users_db.get(form_data.username)
-    if not user or not verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": user.username, "is_admin": user.is_admin}, expires_delta=access_token_expires
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+    with tracer.start_as_current_span("login_for_access_token") as span:
+        span.set_attribute("auth.username", form_data.username)
+        
+        with tracer.start_as_current_span("user_lookup"):
+            user = users_db.get(form_data.username)
+            span.set_attribute("user.found", user is not None)
+        
+        with tracer.start_as_current_span("password_verification") as verify_span:
+            password_valid = user and verify_password(form_data.password, user.hashed_password)
+            verify_span.set_attribute("password.valid", password_valid)
+            
+            if not password_valid:
+                span.set_attribute("auth.status", "failed")
+                span.set_attribute("auth.error", "invalid_credentials")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Incorrect username or password",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        
+        # Теперь мы знаем, что user не None
+        assert user is not None  # Type assertion для mypy
+        with tracer.start_as_current_span("token_creation"):
+            access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+            access_token = create_access_token(
+                data={"sub": user.username, "is_admin": user.is_admin}, expires_delta=access_token_expires
+            )
+            span.set_attribute("token.expires_minutes", ACCESS_TOKEN_EXPIRE_MINUTES)
+            span.set_attribute("user.is_admin", user.is_admin)
+        
+        span.set_attribute("auth.status", "success")
+        return {"access_token": access_token, "token_type": "bearer"}
 
 @app.get("/users/me", response_model=User)
 async def read_users_me(current_user: UserInDB = Depends(get_current_active_user)):
@@ -326,35 +392,55 @@ async def get_user_orders(
     order_api: httpx.AsyncClient = Depends(get_order_api_client)
 ):
     """Получение списка заказов пользователя"""
-    try:
-        # Создаем токен для аутентификации в сервисе заказов
-        access_token = create_access_token(data={"sub": current_user.username})
+    with tracer.start_as_current_span("get_user_orders") as span:
+        span.set_attribute("user.username", current_user.username)
+        span.set_attribute("user.id", current_user.id)
         
-        # Отправляем запрос с токеном для аутентификации
-        response = await order_api.get(
-            "/orders/", 
-            headers={
-                "Authorization": f"Bearer {access_token}",
-                "X-User-ID": current_user.username
-            }
-        )
-        
-        if response.status_code == 200:
-            orders_data = response.json()
-            orders = [
-                OrderSummary(
-                    id=order["id"],
-                    status=order["status"],
-                    total=order["total"],
-                    created_at=order["created_at"]
+        try:
+            with tracer.start_as_current_span("create_service_token"):
+                # Создаем токен для аутентификации в сервисе заказов
+                access_token = create_access_token(data={"sub": current_user.username})
+            
+            with tracer.start_as_current_span("order_service_request") as req_span:
+                req_span.set_attribute("http.method", "GET")
+                req_span.set_attribute("http.url", "/orders/")
+                req_span.set_attribute("service.name", "order-service")
+                
+                # Отправляем запрос с токеном для аутентификации
+                response = await order_api.get(
+                    "/orders/", 
+                    headers={
+                        "Authorization": f"Bearer {access_token}",
+                        "X-User-ID": current_user.username
+                    }
                 )
-                for order in orders_data
-            ]
-            return orders
-        else:
-            raise HTTPException(status_code=response.status_code, detail="Failed to get orders")
-    except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Order service unavailable")
+                
+                req_span.set_attribute("http.status_code", response.status_code)
+            
+            if response.status_code == 200:
+                with tracer.start_as_current_span("process_orders_response"):
+                    orders_data = response.json()
+                    span.set_attribute("orders.count", len(orders_data))
+                    orders = [
+                        OrderSummary(
+                            id=order["id"],
+                            status=order["status"],
+                            total=order["total"],
+                            created_at=order["created_at"]
+                        )
+                        for order in orders_data
+                    ]
+                    span.set_attribute("operation.status", "success")
+                    return orders
+            else:
+                span.set_attribute("operation.status", "failed")
+                span.set_attribute("error.status_code", response.status_code)
+                raise HTTPException(status_code=response.status_code, detail="Failed to get orders")
+        except httpx.RequestError as e:
+            span.set_attribute("operation.status", "error")
+            span.set_attribute("error.type", "request_error")
+            span.set_attribute("error.message", str(e))
+            raise HTTPException(status_code=503, detail="Order service unavailable")
 
 @app.get("/users/me/cart")
 async def get_user_cart(
@@ -377,19 +463,45 @@ async def create_order_from_cart(
     cart_api: httpx.AsyncClient = Depends(get_cart_api_client)
 ):
     """Оформление заказа из корзины пользователя"""
-    try:
-        response = await cart_api.post("/cart/checkout", headers={"X-User-ID": current_user.username})
-        if response.status_code == 200:
-            # Обновляем общую сумму потраченных средств пользователя
-            order_data = response.json()
-            current_user.total_spent += order_data.get("total", 0.0)
-            users_db[current_user.username] = current_user
+    with tracer.start_as_current_span("create_order_from_cart") as span:
+        span.set_attribute("user.username", current_user.username)
+        span.set_attribute("user.id", current_user.id)
+        span.set_attribute("user.total_spent_before", current_user.total_spent)
+        
+        try:
+            with tracer.start_as_current_span("cart_checkout_request") as req_span:
+                req_span.set_attribute("http.method", "POST")
+                req_span.set_attribute("http.url", "/cart/checkout")
+                req_span.set_attribute("service.name", "cart-service")
+                
+                response = await cart_api.post("/cart/checkout", headers={"X-User-ID": current_user.username})
+                req_span.set_attribute("http.status_code", response.status_code)
             
-            return response.json()
-        else:
-            raise HTTPException(status_code=response.status_code, detail=response.json().get("detail", "Failed to create order"))
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=503, detail=f"Cart service unavailable: {str(e)}")
+            if response.status_code == 200:
+                with tracer.start_as_current_span("update_user_spending"):
+                    # Обновляем общую сумму потраченных средств пользователя
+                    order_data = response.json()
+                    order_total = order_data.get("total", 0.0)
+                    span.set_attribute("order.total", order_total)
+                    
+                    current_user.total_spent += order_total
+                    users_db[current_user.username] = current_user
+                    
+                    span.set_attribute("user.total_spent_after", current_user.total_spent)
+                    span.set_attribute("operation.status", "success")
+                
+                return response.json()
+            else:
+                span.set_attribute("operation.status", "failed")
+                span.set_attribute("error.status_code", response.status_code)
+                error_detail = response.json().get("detail", "Failed to create order")
+                span.set_attribute("error.detail", error_detail)
+                raise HTTPException(status_code=response.status_code, detail=error_detail)
+        except httpx.RequestError as e:
+            span.set_attribute("operation.status", "error")
+            span.set_attribute("error.type", "request_error")
+            span.set_attribute("error.message", str(e))
+            raise HTTPException(status_code=503, detail=f"Cart service unavailable: {str(e)}")
 
 @app.get("/users/me/total-spent")
 async def get_total_spent(current_user: UserInDB = Depends(get_current_active_user)):
