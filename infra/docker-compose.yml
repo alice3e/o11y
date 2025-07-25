@@ -31,9 +31,19 @@ services:
     depends_on:
       cassandra:
         condition: service_healthy
+      jaeger:
+        condition: service_healthy
     environment:
       - CASSANDRA_HOST=cassandra
       - SECRET_KEY=supersecretkey123
+      # Jaeger tracing configuration
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=backend-service
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=backend-service,service.version=1.0.0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/system/health"]
       interval: 10s
@@ -48,10 +58,21 @@ services:
       context: ..
       dockerfile: app/cart-service/Dockerfile
     container_name: infra-cart-service
+    depends_on:
+      jaeger:
+        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
+      # Jaeger tracing configuration
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=cart-service
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=cart-service,service.version=1.0.0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 10s
@@ -66,10 +87,21 @@ services:
       context: ..
       dockerfile: app/order-service/Dockerfile
     container_name: infra-order-service
+    depends_on:
+      jaeger:
+        condition: service_healthy
     environment:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
       - SECRET_KEY=supersecretkey123
+      # Jaeger tracing configuration
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=order-service
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=order-service,service.version=1.0.0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 10s
@@ -84,10 +116,21 @@ services:
       context: ..
       dockerfile: app/user-service/Dockerfile
     container_name: infra-user-service
+    depends_on:
+      jaeger:
+        condition: service_healthy
     environment:
       - CART_SERVICE_URL=http://cart-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
+      # Jaeger tracing configuration
+      - JAEGER_AGENT_HOST=jaeger
+      - JAEGER_AGENT_PORT=6831
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_JAEGER_ENDPOINT=http://jaeger:14268/api/traces
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - OTEL_SERVICE_NAME=user-service
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=user-service,service.version=1.0.0
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 10s
@@ -151,6 +194,11 @@ services:
     ports:
       - "80:80"
       # - "8080:8080"
+    environment:
+      # Переменные для будущей интеграции с трейсингом
+      - OTEL_SERVICE_NAME=nginx-proxy
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318
+      - JAEGER_ENDPOINT=http://jaeger:14268/api/traces
     networks:
       - product-store-net
     restart: unless-stopped
@@ -197,15 +245,34 @@ services:
     depends_on:
       - prometheus
 
+  # Jaeger для трейсинга
   jaeger:
-    image: jaegertracing/jaeger:2.2.0
+    image: jaegertracing/all-in-one:latest
     container_name: jaeger
     ports:
       - "16686:16686" # Jaeger UI
-      - "4317:4317"   # OpenTelemetry gRPC
-      - "4318:4318"   # OpenTelemetry HTTP
+      - "4317:4317"   # OpenTelemetry gRPC receiver
+      - "4318:4318"   # OpenTelemetry HTTP receiver  
+      - "14250:14250" # Jaeger gRPC receiver
+      - "14268:14268" # Jaeger HTTP receiver
+      - "6831:6831/udp" # Jaeger UDP receiver (legacy)
+      - "6832:6832/udp" # Jaeger UDP receiver (legacy)
       - "5778:5778"   # Configuration service
+      - "14269:14269" # Admin port для метрик
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - JAEGER_DISABLED=false
+      - MEMORY_MAX_TRACES=50000
+      - COLLECTOR_ZIPKIN_HOST_PORT=:9411
+    networks:
+      - product-store-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:16686/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   cassandra_data:

@@ -56,3 +56,12 @@ providers:
     editable: true
     options:
       path: /etc/grafana/provisioning/dashboards/backend
+
+  - name: 'jaeger'
+    orgId: 1
+    folder: 'jaeger'
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards/jaeger

@@ -99,6 +99,9 @@ docker-compose ps
 - **🔧 Интерактивная API документация**: http://localhost/swagger/
 - **📊 Grafana дашборды**: http://localhost:3000 (admin/admin)
 - **📈 Prometheus**: http://localhost:9090
+- **🔍 Jaeger Tracing**: http://localhost/jaeger/
+- **🚀 Нагрузочное тестирование**: http://localhost:8089
+- **📈 Prometheus**: http://localhost:9090
 - **🚀 Нагрузочное тестирование**: http://localhost:8089
 
 ### Маршрутизация API через Nginx

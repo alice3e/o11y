@@ -90,6 +90,7 @@ docker-compose ps
 - **Project Documentation**: http://localhost/docs/
 - **Grafana Dashboards**: http://localhost:3000 (admin/admin)
 - **Prometheus**: http://localhost:9090
+- **Jaeger Tracing**: http://localhost/jaeger/
 - **Load Testing**: http://localhost:8089
 
 ### Первоначальная настройка
@@ -176,7 +177,8 @@ curl -X GET http://localhost/api/system/health
 - ✅ Нагрузочное тестирование
 
 ### Планы развития
-- 🔄 Distributed tracing (Jaeger)
+- ✅ Distributed tracing (Jaeger) - инфраструктура готова
+- 🔄 OpenTelemetry интеграция в микросервисы
 - 🔄 Log aggregation (ELK/Loki)
 - 🔄 CI/CD pipeline
 - 🔄 Kubernetes deployment

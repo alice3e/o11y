@@ -334,3 +334,15 @@ scrape_configs:
       # ПРАВИЛО В: Удаляем временную метку
       - regex: prom_name
         action: labeldrop
+
+  # --- Сбор метрик с Jaeger ---
+  - job_name: 'jaeger'
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets: ['jaeger:14269']
+        labels:
+          service: 'jaeger'
+          env: 'development'
+    scrape_interval: 15s
+    scrape_timeout: 10s
