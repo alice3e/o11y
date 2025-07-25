@@ -230,7 +230,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "(sum(rate(http_requests_total{job=\"backend-api\", status=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"backend-api\"}[5m]))) * 100 or on() vector(0)",
+          "expr": "(sum(rate(http_requests_total{job=\"backend-api\", status_code=~\"5..\"}[5m])) / sum(rate(http_requests_total{job=\"backend-api\"}[5m]))) * 100 or on() vector(0)",
           "legendFormat": "Error Rate",
           "refId": "A"
         }
@@ -292,10 +292,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "code",
-          "expr": "sum(products_total{job=\"backend-api\"})",
+          "expr": "products_total{job=\"backend-api\"}",
           "legendFormat": "Total Products",
-          "range": true,
           "refId": "A"
         }
       ],
@@ -402,10 +400,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "editorMode": "code",
-          "expr": "histogram_quantile(0.95, sum(rate(cassandra_request_latency_seconds_bucket{job=\"backend-api\"}[5m])) by (le, query_type))",
-          "legendFormat": "{{query_type}}",
-          "range": true,
+          "expr": "histogram_quantile(0.95, sum(rate(cassandra_query_duration_seconds_bucket{job=\"backend-api\"}[5m])) by (le, operation))",
+          "legendFormat": "{{operation}}",
           "refId": "A"
         }
       ],
@@ -499,8 +495,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(cassandra_request_latency_seconds_count{job=\"backend-api\"}[5m])) by (query_type)",
-          "legendFormat": "{{query_type}}",
+          "expr": "sum(rate(cassandra_query_duration_seconds_count{job=\"backend-api\"}[5m])) by (operation)",
+          "legendFormat": "{{operation}}",
           "refId": "A"
         }
       ],
@@ -514,298 +510,6 @@
         "w": 24,
         "x": 0,
         "y": 18
-      },
-      "id": 42,
-      "panels": [],
-      "title": "Business & Auth Metrics",
-      "type": "row"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 19
-      },
-      "id": 44,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "editorMode": "code",
-          "expr": "rate(products_created_total{job=\"backend-api\"})",
-          "legendFormat": "Created",
-          "range": true,
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "rate(products_updated_total{job=\"backend-api\"}[5m])",
-          "legendFormat": "Updated",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "rate(products_deleted_total{job=\"backend-api\"}[5m])",
-          "legendFormat": "Deleted",
-          "refId": "C"
-        }
-      ],
-      "title": "Product CRUD Rate",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            }
-          },
-          "mappings": [],
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 19
-      },
-      "id": 46,
-      "options": {
-        "displayLabels": [
-          "name",
-          "percent"
-        ],
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "pieType": "donut",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(products_fetched_total{job=\"backend-api\"}) by (fetch_type)",
-          "instant": true,
-          "legendFormat": "{{fetch_type}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Product Fetches by Type",
-      "type": "piechart"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "PBFA97CFB590B2093"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "opacity",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green"
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 19
-      },
-      "id": 48,
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.0.2",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${DS_PROMETHEUS}"
-          },
-          "expr": "sum(rate(auth_events_total{job=\"backend-api\"}[5m])) by (type, reason)",
-          "legendFormat": "{{type}} - {{reason}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Authentication Events",
-      "type": "timeseries"
-    },
-    {
-      "collapsed": false,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 27
       },
       "id": 26,
       "panels": [],
@@ -876,7 +580,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 28
+        "y": 19
       },
       "id": 8,
       "options": {
@@ -899,8 +603,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\"}[5m])) by (le, handler))",
-          "legendFormat": "{{handler}}",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\"}[5m])) by (le, endpoint))",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
       ],
@@ -971,7 +675,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 28
+        "y": 19
       },
       "id": 24,
       "options": {
@@ -994,8 +698,8 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "sum(rate(http_requests_total{job=\"backend-api\"}[5m])) by (handler)",
-          "legendFormat": "{{handler}}",
+          "expr": "sum(rate(http_requests_total{job=\"backend-api\"}[5m])) by (endpoint)",
+          "legendFormat": "{{endpoint}}",
           "refId": "A"
         }
       ],
@@ -1008,7 +712,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 36
+        "y": 27
       },
       "id": 28,
       "panels": [],
@@ -1079,7 +783,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 37
+        "y": 28
       },
       "id": 30,
       "options": {
@@ -1174,7 +878,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 37
+        "y": 28
       },
       "id": 32,
       "options": {
@@ -1278,7 +982,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 37
+        "y": 28
       },
       "id": 34,
       "options": {
@@ -1329,5 +1033,5 @@
   "timezone": "",
   "title": "Backend API Service",
   "uid": "backend-api-dashboard",
-  "version": 2
+  "version": 4
 }
