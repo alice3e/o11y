@@ -15,7 +15,7 @@ set -e # Прекратить выполнение при любой ошибк�
 # --- КОНФИГУРАЦИЯ ---
 readonly API_URL="http://localhost"
 readonly NUM_ADMINS=30
-readonly TARGET_PRODUCTS=20000
+readonly TARGET_PRODUCTS=30000
 readonly PRODUCTS_PER_ADMIN=$((TARGET_PRODUCTS / NUM_ADMINS))
 
 # --- ДАННЫЕ ДЛЯ ГЕНЕРАЦИИ ---
@@ -110,8 +110,8 @@ create_products_batch() {
         
         # Генерируем случайную цену и количество
         local price
-        price=$(printf "%.2f" "$(echo "scale=2; $RANDOM/327.67 * 1000 + 10" | bc)")
-        local stock=$(($RANDOM % 500 + 50))
+        price=$(printf "%.2f" "$(echo "scale=2; $RANDOM/327.67 * 10 + 10" | bc)")
+        local stock=$(($RANDOM % 500 + 5000))
         
         local payload
         payload=$(cat <<EOF

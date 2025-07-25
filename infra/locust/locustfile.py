@@ -26,7 +26,7 @@ class ShoppingUser(HttpUser):
     headers: dict = {}
     username: str = None
     viewed_product_ids: list = []
-    cart_items: dict = {}
+    cart_items: list = []
 
     def on_start(self):
         """
@@ -59,12 +59,13 @@ class ShoppingUser(HttpUser):
                     response.failure(f"Failed to login. Status: {response.status_code}, Text: {response.text}")
             except (JSONDecodeError, KeyError):
                 response.failure("Failed to parse login token from response.")
-                
+
     @task(10)
     def browse_products(self):
         """
         Имитирует просмотр товаров: получает список категорий, выбирает одну,
-        "пролистывает" несколько страниц и открывает детальную страницу товара.
+        "прыгает" по случайным страницам от 1 до 5 раз,
+        а затем открывает детальную карточку случайного товара из просмотренных.
         """
         if not self.token:
             return
@@ -85,12 +86,11 @@ class ShoppingUser(HttpUser):
         category_name = random.choice(categories)["name"]
         
         # --- Шаг 2: Делаем первый запрос, чтобы узнать, сколько всего страниц ---
-        limit_per_page = 20 # Сколько товаров на одной странице
-        current_skip = 0
+        limit_per_page = 20
         total_pages = 1
-        products_on_last_page = []
+        viewable_products = [] # Список для накопления товаров со всех просмотренных страниц
 
-        url = f"/api/products/?category={category_name}&skip={current_skip}&limit={limit_per_page}"
+        url = f"/api/products/?category={category_name}&skip=0&limit={limit_per_page}"
         with self.client.get(url, headers=self.headers, catch_response=True, name="/api/products/?category=[category]") as response:
             try:
                 if response.status_code != 200:
@@ -99,121 +99,116 @@ class ShoppingUser(HttpUser):
                 
                 data = response.json()
                 total_pages = data.get("pages", 1)
-                products_on_last_page = data.get("items", [])
+                # Добавляем товары с первой страницы в наш накопительный список
+                if data.get("items"):
+                    viewable_products.extend(data["items"])
                 
             except JSONDecodeError:
                 response.failure("Non-JSON response for initial product list")
                 return
 
-        # --- Шаг 3: Определяем, сколько страниц "пролистать" ---
-        pages_to_scroll = random.randint(0, 5) # Пролистает от 0 до 4 ДОПОЛНИТЕЛЬНЫХ страниц
+        # --- Шаг 3: Определяем, сколько раз "прыгнуть" по страницам ---
+        jumps_to_make = random.randint(1, 5)
         
-        if total_pages > 1: # Только если есть куда листать
-            for i in range(pages_to_scroll):
-                current_skip += limit_per_page
-                
-                # Защита, чтобы не выйти за пределы существующих страниц
-                if current_skip >= (total_pages * limit_per_page):
-                    break
+        if total_pages > 1:
+            for _ in range(jumps_to_make):
+                # Генерируем случайный номер страницы (от 0 до total_pages-1)
+                random_page_index = random.randint(0, total_pages - 1)
+                random_skip = random_page_index * limit_per_page
 
-                # Имитация паузы между пролистыванием страниц
+                # Пауза перед "прыжком" на новую страницу
                 self.wait()
 
-                scroll_url = f"/api/products/?category={category_name}&skip={current_skip}&limit={limit_per_page}"
-                with self.client.get(scroll_url, headers=self.headers, catch_response=True, name="/api/products/?category=[category]") as response:
+                jump_url = f"/api/products/?category={category_name}&skip={random_skip}&limit={limit_per_page}"
+                with self.client.get(jump_url, headers=self.headers, catch_response=True, name="/api/products/?category=[category]") as response:
                     try:
                         if response.status_code != 200:
-                            # Это не критичная ошибка, просто прекращаем листать
-                            break 
+                            continue # Если страница не загрузилась, просто переходим к следующему прыжку
                         
                         data = response.json()
-                        products = data.get("items", [])
+                        products_on_page = data.get("items", [])
                         
-                        if not products: # Если страница пустая, прекращаем
-                            break
-                        
-                        products_on_last_page = products
+                        if products_on_page:
+                            viewable_products.extend(products_on_page)
 
                     except JSONDecodeError:
-                        break # Прекращаем, если ответ не JSON
+                        continue # Игнорируем ошибки парсинга и пробуем следующую страницу
 
-        # --- Шаг 4: Выбираем случайный товар с последней просмотренной страницы ---
-        if not products_on_last_page:
+        # --- Шаг 4: Выбираем случайный товар из всех, что мы видели ---
+        if not viewable_products:
             return
 
-        product_to_view = random.choice(products_on_last_page)
-        print(products_on_last_page)
+        product_to_view = random.choice(viewable_products)
         product_id = product_to_view.get("product_id")
         if not product_id:
             return
             
-        # Запоминаем ID товара для будущих действий (добавление в корзину)
+        # Запоминаем ID товара для будущих действий
         self.viewed_product_ids.append(product_id)
-        self.viewed_product_ids = self.viewed_product_ids[-20:] # Ограничиваем историю
+        self.viewed_product_ids = self.viewed_product_ids[-20:]
 
         # --- Шаг 5: Открываем детальную карточку товара ---
         self.client.get(f"/api/products/{product_id}", headers=self.headers, name="/api/products/[product_id]")
+        
     @task(5)
     def manage_cart(self):
         """
-        Работа с корзиной: добавление, просмотр, изменение/удаление.
-        Использует product_id для идентификации элементов в PUT/DELETE запросах.
+        Работа с корзиной: добавление, просмотр и изменение/удаление на основе
+        АКТУАЛЬНОГО состояния корзины с сервера.
         """
-        if not self.token or not self.viewed_product_ids:
-            return
-            
-        # Выбираем товар, которого еще нет в корзине, чтобы избежать конфликтов
-        # (в реальном API добавление существующего товара могло бы увеличивать его количество)
-        product_id_to_add = None
-        for pid in self.viewed_product_ids:
-            if pid not in self.cart_items:
-                product_id_to_add = pid
-                break
-        
-        # Если все просмотренные товары уже в корзине, ничего не делаем
-        if not product_id_to_add:
+        if not self.token:
             return
 
-        # --- Шаг 1: Добавляем товар в корзину ---
-        with self.client.post(
-            "/cart-api/cart/items",
-            headers=self.headers,
-            json={"product_id": product_id_to_add, "quantity": random.randint(1, 3)},
-            catch_response=True,
-            name="/cart-api/cart/items (add)"
-        ) as response:
+        # --- ШАГ 1: С вероятностью 70% пытаемся добавить новый товар ---
+        # Это основное действие пользователя с корзиной
+        if random.random() < 0.7 and self.viewed_product_ids:
+            product_id_to_add = random.choice(self.viewed_product_ids)
+            
+            with self.client.post(
+                "/cart-api/cart/items",
+                headers=self.headers,
+                json={"product_id": product_id_to_add, "quantity": random.randint(1, 3)},
+                catch_response=True,
+                name="/cart-api/cart/items (add)"
+            ) as response:
+                try:
+                    # Независимо от успеха, мы не обновляем локальное состояние,
+                    # так как не будем на него полагаться.
+                    if response.status_code != 200:
+                        response.failure("Failed to add item to cart")
+                except JSONDecodeError:
+                    response.failure("Non-JSON response when adding to cart.")
+        
+        # --- ШАГ 2: Получаем АКТУАЛЬНОЕ состояние корзины с сервера ---
+        current_cart_items = []
+        with self.client.get("/cart-api/cart/", headers=self.headers, catch_response=True, name="/cart-api/cart/ (view)") as response:
             try:
                 if response.status_code == 200:
-                    item_data = response.json()
-                    # ИСПРАВЛЕНИЕ: Сохраняем product_id, так как он используется для идентификации
-                    product_id_in_cart = item_data.get("product_id")
-                    if product_id_in_cart:
-                        self.cart_items.append(product_id_in_cart)
+                    cart_data = response.json()
+                    current_cart_items = cart_data.get("items", [])
                 else:
-                    response.failure("Failed to add item to cart")
-                    return # Если не смогли добавить, выходим
+                    response.failure("Failed to get current cart state")
+                    return # Если не можем получить корзину, нет смысла продолжать
             except (JSONDecodeError, KeyError):
-                response.failure("Failed to parse cart item from response.")
+                response.failure("Failed to parse current cart state")
                 return
 
-        # --- Шаг 2: Смотрим состав корзины ---
-        self.client.get("/cart-api/cart/", headers=self.headers, name="/cart-api/cart/ (view)")
-        
-        # --- Шаг 3: С вероятностью 30% изменяем или удаляем один из товаров в корзине ---
-        if self.cart_items and random.random() < 0.3:
-            # ИСПРАВЛЕНИЕ: Выбираем случайный product_id из тех, что в корзине
-            product_id_to_modify = random.choice(self.cart_items)
-            
+        # --- ШАГ 3: Если в корзине ЕСТЬ товары, с вероятностью 50% изменяем/удаляем один из них ---
+        if current_cart_items and random.random() < 0.5:
+            # Выбираем случайный товар из АКТУАЛЬНОГО списка
+            item_to_modify = random.choice(current_cart_items)
+            product_id_to_modify = item_to_modify.get("product_id")
+
+            if not product_id_to_modify:
+                return
+
             # 50% шанс на удаление
             if random.random() < 0.5:
-                with self.client.delete(
+                self.client.delete(
                     f"/cart-api/cart/items/{product_id_to_modify}", 
                     headers=self.headers, 
                     name="/cart-api/cart/items/[product_id] (delete)"
-                ) as response:
-                    if response.status_code == 200:
-                        # Удаляем из нашего локального состояния
-                        self.cart_items.remove(product_id_to_modify)
+                )
             # 50% шанс на обновление
             else:
                 self.client.put(
@@ -222,26 +217,75 @@ class ShoppingUser(HttpUser):
                     json={"quantity": random.randint(1, 10)},
                     name="/cart-api/cart/items/[product_id] (update)"
                 )
+        
+        self.cart_items = [item.get("product_id") for item in current_cart_items if item.get("product_id")]
+        
+
     @task(1)
     def checkout_and_check_orders(self):
-        """Оформление заказа и проверка истории."""
-        if not self.token or not self.cart_items: return
-            
-        # ИСПРАВЛЕНИЕ: Используем эндпоинт из user-service, как в документации
+        """
+        Гарантированно оформляет заказ и проверяет историю.
+        Если корзина пуста, сначала добавляет в нее товар.
+        """
+        if not self.token:
+            return
+
+        # --- Шаг 1: Проверяем актуальное состояние корзины на сервере ---
+        cart_is_empty = True
+        with self.client.get("/cart-api/cart/", headers=self.headers, catch_response=True, name="/cart-api/cart/ (pre-checkout check)") as response:
+            try:
+                if response.status_code == 200:
+                    cart_data = response.json()
+                    if cart_data.get("items"):
+                        cart_is_empty = False
+                else:
+                    response.failure("Failed to check cart state before checkout")
+                    return # Не можем продолжить, если не знаем состояние корзины
+            except (JSONDecodeError, KeyError):
+                response.failure("Could not parse cart state response")
+                return
+
+        # --- Шаг 2: Если корзина пуста, добавляем товар ---
+        if cart_is_empty:
+            if not self.viewed_product_ids:
+                # Если пользователь ничего не смотрел, он не может ничего добавить. Выходим.
+                return
+
+            product_id_to_add = random.choice(self.viewed_product_ids)
+            with self.client.post(
+                "/cart-api/cart/items",
+                headers=self.headers,
+                json={"product_id": product_id_to_add, "quantity": 1},
+                catch_response=True,
+                name="/cart-api/cart/items (add before checkout)"
+            ) as response:
+                try:
+                    if response.status_code == 200:
+                        item_data = response.json()
+                        self.cart_items.append(item_data.get("product_id"))
+                    else:
+                        response.failure("Failed to add pre-checkout item to cart")
+                        return # Если не смогли добавить товар, то и checkout невозможен
+                except (JSONDecodeError, KeyError):
+                    response.failure("Failed to parse pre-checkout item response")
+                    return
+
+        # --- Шаг 3: Оформляем заказ ---
+        # Теперь мы уверены, что в корзине что-то есть
         with self.client.post("/user-api/users/me/orders", headers=self.headers, catch_response=True, name="/user-api/users/me/orders (checkout)") as response:
             try:
                 if response.status_code == 200:
                     logging.info(f"User {self.username} successfully checked out.")
-                    self.cart_items.clear()
+                    self.cart_items.clear() # Очищаем наше локальное состояние
                 else:
                     response.failure(f"Checkout failed. Status: {response.status_code}, Text: {response.text}")
-                    return
+                    return # Если checkout не удался, нет смысла проверять заказы
             except JSONDecodeError:
                 response.failure("Non-JSON response on checkout")
                 return
 
-        # Небольшая пауза перед проверкой заказов
-        self.interrupt(reschedule=False)
+        # --- Шаг 4: Пауза и проверка истории заказов ---
+        # ИСПРАВЛЕНИЕ: Используем self.wait() для имитации паузы
         self.wait()
         
         self.client.get("/user-api/users/me/orders", headers=self.headers, name="/user-api/users/me/orders (view)")
