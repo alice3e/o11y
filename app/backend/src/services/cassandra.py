@@ -48,37 +48,7 @@ def get_cassandra_session():
 def create_schema(session):
     """Создание таблиц в Cassandra."""
     global metrics_collector
-    
-    # Drop the existing table to recreate with new schema
-    try:
-        log.info("Dropping table 'products' if exists...")
-        start_time = time.time()
-        session.execute("DROP TABLE IF EXISTS products")
-        if metrics_collector:
-            duration = time.time() - start_time
-            metrics_collector.record_db_query('drop_table', duration)
-        log.info("Table 'products' dropped.")
-    except Exception as e:
-        log.warning(f"Error dropping table: {e}")
-    
-    log.info("Creating table 'products'...")
-    start_time = time.time()
-    session.execute("""
-        CREATE TABLE IF NOT EXISTS products (
-            id UUID PRIMARY KEY,
-            name TEXT,
-            category TEXT,
-            price DECIMAL,
-            quantity INT,
-            description TEXT,
-            manufacturer TEXT
-        );
-    """)
-    if metrics_collector:
-        duration = time.time() - start_time
-        metrics_collector.record_db_query('create_table', duration)
     log.info("Table 'products' created.")
-
 
 def init_cassandra():
     """Инициализация Cassandra: подключение, создание keyspace и таблиц."""
