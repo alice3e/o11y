@@ -191,9 +191,6 @@ def list_products(
         # Обновляем метрики продуктов при запросах
         if metrics_collector:
             metrics_collector.update_product_metrics()
-            # Записываем HTTP запрос
-            request_duration = time.time() - start_time
-            metrics_collector.record_request("GET", "/products", 200, request_duration)
         
         return {
             "items": paginated_products,

@@ -1,15 +1,72 @@
 # Файл: app/backend/src/__main__.py
 
 import uvicorn
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 # ИЗМЕНЕННЫЙ ИМПОРТ: Импортируем роутеры из __init__.py пакета api
 from .api import system_router, products_router
 
 # Импортируем сервис для работы с БД
 from .services import cassandra
-from .services.metrics import setup_metrics
+from .services.metrics import setup_metrics, metrics_collector
+
+
+class MetricsMiddleware:
+    """Middleware для автоматического сбора HTTP метрик"""
+    
+    def __init__(self, app):
+        self.app = app
+        
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+            
+        # Извлекаем информацию о запросе
+        method = scope["method"]
+        path = scope["path"]
+        
+        # Нормализуем путь для группировки метрик
+        endpoint = self._normalize_endpoint(path)
+        
+        start_time = time.time()
+        
+        # Создаем обертку для отслеживания статус кода
+        status_code = 200
+        
+        async def send_wrapper(message):
+            nonlocal status_code
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+            await send(message)
+        
+        try:
+            await self.app(scope, receive, send_wrapper)
+        finally:
+            # Записываем метрики после обработки запроса (исключая сам эндпоинт метрик)
+            if endpoint and endpoint != "/metrics":
+                duration = time.time() - start_time
+                if metrics_collector:
+                    metrics_collector.record_request(method, endpoint, status_code, duration)
+    
+    def _normalize_endpoint(self, path: str) -> str:
+        """Нормализация пути для группировки метрик"""
+        # Заменяем UUID и числовые ID на параметры
+        import re
+        
+        # UUID паттерн
+        path = re.sub(r'/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}', '/{product_id}', path)
+        
+        # Числовые ID
+        path = re.sub(r'/\d+', '/{id}', path)
+        
+        # Удаляем query параметры
+        if '?' in path:
+            path = path.split('?')[0]
+            
+        return path
 
 
 @asynccontextmanager
@@ -39,6 +96,9 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan
 )
+
+# --- Добавляем middleware для метрик ---
+app.add_middleware(MetricsMiddleware)
 
 # --- Подключение роутеров ---
 # ИСПОЛЬЗУЕМ НОВЫЕ ИМЕНА

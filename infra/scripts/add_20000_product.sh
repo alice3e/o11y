@@ -14,8 +14,8 @@ set -e # Прекратить выполнение при любой ошибк�
 
 # --- КОНФИГУРАЦИЯ ---
 readonly API_URL="http://localhost"
-readonly NUM_ADMINS=25
-readonly TARGET_PRODUCTS=50000
+readonly NUM_ADMINS=30
+readonly TARGET_PRODUCTS=20000
 readonly PRODUCTS_PER_ADMIN=$((TARGET_PRODUCTS / NUM_ADMINS))
 
 # --- ДАННЫЕ ДЛЯ ГЕНЕРАЦИИ ---
