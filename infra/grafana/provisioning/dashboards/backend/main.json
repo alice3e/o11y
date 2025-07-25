@@ -605,7 +605,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/system/health\"}[5m])) by (le, endpoint))",
-          "hide": false,
+          "hide": true,
           "legendFormat": "/system/health",
           "range": true,
           "refId": "A"
@@ -617,7 +617,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/metrics\"}[5m])) by (le, endpoint))",
-          "hide": false,
+          "hide": true,
           "instant": false,
           "legendFormat": "/metrics",
           "range": true,
@@ -630,7 +630,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/products/\"}[5m])) by (le, endpoint))",
-          "hide": false,
+          "hide": true,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -643,7 +643,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/products/{product_id}\"}[5m])) by (le, endpoint))",
-          "hide": false,
+          "hide": true,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -656,7 +656,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/products/\", method=\"POST\"}[5m])) by (le, endpoint, method))",
-          "hide": false,
+          "hide": true,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -669,7 +669,7 @@
           },
           "editorMode": "code",
           "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\", endpoint=\"/products/categories/list\"}[5m])) by (le, endpoint))",
-          "hide": false,
+          "hide": true,
           "instant": false,
           "legendFormat": "__auto",
           "range": true,
@@ -680,9 +680,11 @@
             "type": "prometheus",
             "uid": "PBFA97CFB590B2093"
           },
-          "expr": "",
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.99, sum(rate(http_request_duration_seconds_bucket{job=\"backend-api\"}[5m])) by (le, endpoint))",
           "hide": false,
           "instant": false,
+          "legendFormat": "__auto",
           "range": true,
           "refId": "G"
         }
@@ -777,8 +779,10 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
+          "editorMode": "code",
           "expr": "sum(rate(http_requests_total{job=\"backend-api\"}[5m])) by (endpoint)",
           "legendFormat": "{{endpoint}}",
+          "range": true,
           "refId": "A"
         }
       ],
@@ -1112,5 +1116,5 @@
   "timezone": "",
   "title": "Backend API Service",
   "uid": "backend-api-dashboard",
-  "version": 5
+  "version": 6
 }
