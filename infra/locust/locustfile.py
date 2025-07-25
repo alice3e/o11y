@@ -5,6 +5,24 @@ import logging
 import uuid
 from locust import HttpUser, task, between
 from json import JSONDecodeError
+from opentelemetry import trace
+from opentelemetry.sdk.resources import Resource
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.instrumentation.requests import RequestsInstrumentor
+
+trace.set_tracer_provider(
+    TracerProvider(
+        resource=Resource.create({"service.name": "locust"})
+    )
+)
+span_processor = BatchSpanProcessor(
+    OTLPSpanExporter(endpoint="http://jaeger:4318/v1/traces")
+)
+
+trace.get_tracer_provider().add_span_processor(span_processor)
+RequestsInstrumentor().instrument()
 
 # --- Настройка логирования для чистоты вывода ---
 logging.getLogger("urllib3").setLevel(logging.WARNING)

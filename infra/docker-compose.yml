@@ -164,7 +164,9 @@ services:
       - product-store-net
 
   locust:
-    image: locustio/locust
+    build: 
+      context: .
+      dockerfile: locust.Dockerfile
     container_name: locust
     ports:
       - "8089:8089"
