@@ -1,29 +1,66 @@
 groups:
-  # Простые алерты согласно ТЗ
-  - name: performance_alerts
+  - name: application_latency_alerts
     rules:
-      # 1. Время ответа p99 > 500ms для указанных эндпоинтов
-      - alert: HighResponseTime_P99
+      # ПРАВИЛО 1: P99 Latency для Backend API
+      # Использует метку 'endpoint' и job='backend-api'.
+      - alert: BackendHighP99Latency
         expr: |
-          histogram_quantile(0.99, 
-            rate(http_request_duration_seconds_bucket{
-              endpoint=~"/api/products/.*|/cart-api/cart/items|/user-api/users/me/orders"
-            }[1m])
+          histogram_quantile(0.99,
+            sum by (le, endpoint) (
+              rate(http_request_duration_seconds_bucket{job="backend-api", endpoint=~"/api/products/.*"}[5m])
+            )
           ) > 0.5
         for: 1m
         labels:
           severity: critical
         annotations:
-          summary: "Высокое время ответа P99 (>500ms)"
-          description: "P99 время ответа {{ $labels.endpoint }} на {{ $labels.instance }} превысило 500ms: {{ $value }}s"
+          summary: "Высокая задержка P99 на Backend ({{ $labels.endpoint }})"
+          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
 
-      # 2. RPS в БД > 100
-      - alert: HighDatabaseRPS
+      # ПРАВИЛО 2: P99 Latency для Cart и User сервисов
+      # Использует метку 'handler' и job=~"cart-service|user-service".
+      - alert: AppServicesHighP99Latency
         expr: |
-          rate(database_queries_total[1m]) > 100
+          histogram_quantile(0.99,
+            sum by (le, job, handler) (
+              rate(http_request_duration_seconds_bucket{job=~"cart-service|user-service", handler=~"/cart/items|/users/me/orders"}[5m])
+            )
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокая задержка P99 на сервисе {{ $labels.job }}"
+          description: "P99 время ответа для обработчика {{ $labels.handler }} в сервисе {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
+      
+      # ПРАВИЛО 3: Общая P99 Latency для Order Service
+      # Агрегируется по всему сервису, как в вашем примере.
+      - alert: OrderServiceOverallHighP99Latency
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, job) (
+              rate(http_request_duration_seconds_bucket{job="order-service"}[5m])
+            )
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокая общая задержка P99 на Order Service"
+          description: "Общее P99 время ответа для сервиса {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
+
+  - name: database_alerts
+    rules:
+      # ПРАВИЛО 4: RPS (запросы в секунду) для Cassandra
+      # Использует правильную метрику `mcac_client_request_latency_total` и суммирует по кластеру.
+      - alert: CassandraHighRPS
+        expr: |
+          sum by (cluster) (
+            rate(mcac_client_request_latency_total[1m])
+          ) > 100
         for: 1m
         labels:
           severity: warning
         annotations:
-          summary: "Высокий RPS в базе данных (>100)"
-          description: "RPS в базе данных на {{ $labels.instance }} превысил 100: {{ $value }} запросов/сек"
+          summary: "Высокий RPS в кластере Cassandra"
+          description: "Общий RPS для кластера Cassandra '{{ $labels.cluster }}' превысил 100. Текущее значение: {{ $value | printf '%.2f' }} запросов/сек."
