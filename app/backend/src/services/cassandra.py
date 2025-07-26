@@ -46,9 +46,35 @@ def get_cassandra_session():
 
 
 def create_schema(session):
-    """Создание таблиц в Cassandra."""
+    """
+    Создание таблицы 'products' в Cassandra, если она не существует.
+    """
     global metrics_collector
-    log.info("Table 'products' created.")
+    
+    log.info("Ensuring 'products' table exists...")
+    start_time = time.time()
+    
+    # Этот запрос создаст таблицу, только если она еще не существует.
+    # Если таблица 'products' уже есть, запрос просто ничего не сделает.
+    session.execute("""
+        CREATE TABLE IF NOT EXISTS products (
+            id UUID PRIMARY KEY,
+            name TEXT,
+            category TEXT,
+            price DECIMAL,
+            quantity INT,
+            description TEXT,
+            manufacturer TEXT
+        );
+    """)
+    
+    # Записываем метрики для этой операции
+    if metrics_collector:
+        duration = time.time() - start_time
+        # Название метрики 'create_table' подходит, так как операция связана с созданием
+        metrics_collector.record_db_query('create_table', duration)
+        
+    log.info("Table 'products' schema is ready.")
 
 def init_cassandra():
     """Инициализация Cassandra: подключение, создание keyspace и таблиц."""

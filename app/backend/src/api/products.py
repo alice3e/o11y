@@ -3,6 +3,8 @@ from uuid import UUID
 from ..core.models import ProductCreate, ProductOut, ProductDetailsOut, ProductUpdate, CategoryOut, PaginatedProductsResponse
 from ..auth import get_user_info, get_admin_user
 from ..tracing import get_tracer
+# Импортируем модуль профилирования
+from ..profiling import profile_endpoint, profile_context, get_profile_stats, list_available_profiles
 from cassandra.cqlengine.query import DoesNotExist
 import uuid
 import time
@@ -87,6 +89,7 @@ def get_metrics_collector():
         }
     }
 )
+@profile_endpoint("list_products")
 def list_products(
     session=Depends(get_cassandra_session),
     user_info=Depends(get_user_info),
@@ -294,6 +297,7 @@ def list_products(
         }
     }
 )
+@profile_endpoint("create_product")
 def create_product(
     product: ProductCreate, 
     session=Depends(get_cassandra_session),
@@ -307,7 +311,7 @@ def create_product(
         span.set_attribute("product.category", product.category)
         span.set_attribute("product.price", float(product.price))
         span.set_attribute("product.stock_count", product.stock_count)
-        span.set_attribute("admin.username", admin_user.username)
+        span.set_attribute("admin.username", admin_user["username"])
         
         metrics_collector = get_metrics_collector()
         
@@ -341,6 +345,7 @@ def create_product(
 
 
 @router.get("/{product_id}", response_model=ProductDetailsOut)
+@profile_endpoint("get_product")
 def get_product(product_id: UUID, session=Depends(get_cassandra_session)):
     """Получение товара по ID."""
     tracer = get_tracer()
@@ -387,6 +392,7 @@ def get_product(product_id: UUID, session=Depends(get_cassandra_session)):
 
 
 @router.put("/{product_id}", response_model=ProductDetailsOut)
+@profile_endpoint("update_product")
 def update_product(product_id: UUID, product_update: ProductUpdate, session=Depends(get_cassandra_session)):
     """Обновление товара по ID."""
     metrics_collector = get_metrics_collector()
@@ -447,6 +453,7 @@ def update_product(product_id: UUID, product_update: ProductUpdate, session=Depe
     return current_product
 
 @router.delete("/{product_id}", status_code=204)
+@profile_endpoint("delete_product")
 def delete_product(product_id: UUID, session=Depends(get_cassandra_session)):
     """Удаление товара по ID."""
     metrics_collector = get_metrics_collector()
@@ -501,6 +508,7 @@ def list_categories(session=Depends(get_cassandra_session)):
     return result
 
 @router.get("/by-category/{category}", response_model=PaginatedProductsResponse)
+@profile_endpoint("get_products_by_category")
 def get_products_by_category(
     category: str,
     session=Depends(get_cassandra_session),

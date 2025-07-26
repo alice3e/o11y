@@ -2,6 +2,7 @@
 
 import uvicorn
 import time
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 
@@ -14,6 +15,9 @@ from .services.metrics import setup_metrics, metrics_collector
 
 # Импортируем модуль трейсинга
 from .tracing import setup_tracing, get_tracer
+
+# Импортируем профилирование
+from .profiling import ensure_profiles_dir
 
 
 class MetricsMiddleware:
@@ -82,6 +86,14 @@ async def lifespan(app: FastAPI):
     # Настраиваем метрики после инициализации БД
     setup_metrics(app, app.state.cassandra_session)
     print("Application startup: Metrics configured.")
+    
+    # Инициализируем профилирование
+    profiling_enabled = os.getenv('ENABLE_PROFILING', 'false').lower() == 'true'
+    if profiling_enabled:
+        ensure_profiles_dir()
+        print("Application startup: Profiling enabled and configured.")
+    else:
+        print("Application startup: Profiling disabled.")
     
     yield
     print("Application shutdown: Closing database connection...")

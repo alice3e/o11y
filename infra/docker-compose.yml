@@ -46,6 +46,7 @@ services:
     environment:
       - CASSANDRA_HOST=cassandra
       - SECRET_KEY=supersecretkey123
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -59,6 +60,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - profiling_data:/app/profiles
     networks:
       - product-store-net
 

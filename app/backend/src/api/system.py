@@ -4,6 +4,7 @@ import time
 from fastapi import APIRouter, Response, status
 from cassandra.cluster import Cluster, NoHostAvailable
 from ..tracing import get_tracer
+from ..profiling import profile_endpoint, list_available_profiles, ensure_profiles_dir
 
 # Создаем новый "роутер". Его можно воспринимать как мини-приложение FastAPI.
 router = APIRouter(
@@ -24,7 +25,8 @@ def get_metrics_collector():
         return None
 
 @router.get("/health", summary="Проверка состояния сервиса и подключения к БД")
-def health_check(response: Response):
+@profile_endpoint("health_check")
+async def health_check(response: Response):
     """
     Проверяет доступность Cassandra.
     Возвращает 200 OK, если все хорошо.
@@ -78,3 +80,30 @@ def health_check(response: Response):
             
             response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
             return {"status": "error", "database_connection": f"error: {e}"}
+
+
+# Endpoints для управления профилированием
+@router.get("/profiling/status")
+@profile_endpoint("profiling_status")
+async def get_profiling_status():
+    """Получить статус профилирования"""
+    ensure_profiles_dir()
+    profiling_enabled = os.getenv('ENABLE_PROFILING', 'false').lower() == 'true'
+    return {
+        "profiling_enabled": profiling_enabled,
+        "profiles_directory": "/app/profiles",
+        "service": "backend"
+    }
+
+
+@router.get("/profiling/profiles")
+@profile_endpoint("list_profiles")
+async def get_available_profiles():
+    """Получить список доступных профилей"""
+    ensure_profiles_dir()
+    profiles = list_available_profiles()
+    return {
+        "service": "backend",
+        "available_profiles": profiles,
+        "total_count": len(profiles)
+    }

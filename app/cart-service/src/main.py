@@ -196,6 +196,7 @@ async def health_check():
     return {"status": "ok", "service": "cart-service"}
 
 @app.get("/cart/", response_model=Cart)
+@profile_endpoint("get_cart")
 async def get_cart(user_id: str = Depends(get_user_id)):
     with tracer.start_as_current_span("get_cart") as span:
         span.set_attribute("user.id", user_id)

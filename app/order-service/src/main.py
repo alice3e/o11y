@@ -226,6 +226,7 @@ async def health_check():
     return {"status": "ok", "service": "order-service"}
 
 @app.get("/orders/", response_model=List[Order])
+@profile_endpoint("get_orders")
 async def get_orders(user_id: str = Depends(get_user_id), admin: Optional[bool] = Header(False)):
     with tracer.start_as_current_span("get_orders") as span:
         span.set_attribute("user.id", user_id)
