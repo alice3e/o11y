@@ -17,6 +17,9 @@ from prometheus_client import Counter, Histogram
 # Импортируем модуль трейсинга
 from src.tracing import setup_tracing, get_tracer
 
+# Импортируем модуль профилирования
+from src.profiling import profile_endpoint, profile_context, get_profile_stats, list_available_profiles
+
 app = FastAPI()
 
 # Инициализация OpenTelemetry трейсинга
@@ -237,6 +240,7 @@ async def get_orders(user_id: str = Depends(get_user_id), admin: Optional[bool] 
         return user_orders
 
 @app.post("/orders/", response_model=Order)
+@profile_endpoint("create_order")
 async def create_order(order: OrderCreate, background_tasks: BackgroundTasks, user_id: str = Depends(get_user_id)):
     with tracer.start_as_current_span("create_order") as span:
         span.set_attribute("user.id", user_id)
@@ -350,3 +354,133 @@ async def cancel_order(order_id: str, user_id: str = Depends(get_user_id), admin
 async def get_order_statuses():
     with tracer.start_as_current_span("get_order_statuses"):
         return ORDER_STATUSES
+
+# Эндпоинты для управления профилированием
+@app.get("/profiling/status")
+async def get_profiling_status():
+    """Получение статуса профилирования"""
+    return {
+        "service": "order-service",
+        "enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true",
+        "profiles_directory": "/app/profiles"
+    }
+
+@app.get("/profiling/profiles")
+async def list_profiles():
+    """Получение списка доступных профилей для order-service"""
+    return {"profiles": list_available_profiles()}
+
+@app.get("/profiling/profiles/{filename}/stats")
+async def get_profile_stats_endpoint(filename: str):
+    """Получение статистики профиля"""
+    profile_path = f"/app/profiles/{filename}"
+    stats = get_profile_stats(profile_path)
+    return {"filename": filename, "service": "order-service", "stats": stats}
+
+@app.post("/profiling/manual/{operation_name}")
+@profile_endpoint("manual_operation")
+async def manual_profiling_test(operation_name: str):
+    """Тестовый эндпоинт для ручного профилирования заказов"""
+    import random
+    import asyncio
+    
+    # Имитация различных операций с заказами
+    with profile_context(f"order_manual_{operation_name}"):
+        # Имитация обработки заказов
+        orders_data = []
+        for i in range(200):
+            order = {
+                "order_id": f"order_{i}",
+                "user_id": f"user_{random.randint(1, 100)}",
+                "total": random.uniform(50, 2000),
+                "items": [
+                    {
+                        "product_id": f"product_{random.randint(1, 500)}",
+                        "quantity": random.randint(1, 3),
+                        "price": random.uniform(10, 500)
+                    }
+                    for _ in range(random.randint(1, 5))
+                ]
+            }
+            orders_data.append(order)
+        
+        # Имитация расчета статистики
+        total_revenue = sum(order["total"] for order in orders_data)
+        avg_order_value = total_revenue / len(orders_data)
+        
+        # Имитация IO операции
+        await asyncio.sleep(0.08)
+        
+        return {
+            "operation": operation_name,
+            "service": "order-service",
+            "processed_orders": len(orders_data),
+            "total_revenue": total_revenue,
+            "average_order_value": avg_order_value,
+            "profiling_enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true"
+        }
+
+# Эндпоинты для управления профилированием
+@app.get("/profiling/status")
+async def get_profiling_status():
+    """Получение статуса профилирования"""
+    return {
+        "service": "order-service",
+        "enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true",
+        "profiles_directory": "/app/profiles"
+    }
+
+@app.get("/profiling/profiles")
+async def list_profiles():
+    """Получение списка доступных профилей для order-service"""
+    return {"profiles": list_available_profiles()}
+
+@app.get("/profiling/profiles/{filename}/stats")
+async def get_profile_stats_endpoint(filename: str):
+    """Получение статистики профиля"""
+    profile_path = f"/app/profiles/{filename}"
+    stats = get_profile_stats(profile_path)
+    return {"filename": filename, "service": "order-service", "stats": stats}
+
+@app.post("/profiling/manual/{operation_name}")
+@profile_endpoint("manual_operation")
+async def manual_profiling_test(operation_name: str):
+    """Тестовый эндпоинт для ручного профилирования заказов"""
+    import random
+    import asyncio
+    
+    # Имитация различных операций с заказами
+    with profile_context(f"order_manual_{operation_name}"):
+        # Имитация обработки заказов
+        orders_data = []
+        for i in range(200):
+            order = {
+                "order_id": f"order_{i}",
+                "user_id": f"user_{random.randint(1, 100)}",
+                "total": random.uniform(50, 2000),
+                "items": [
+                    {
+                        "product_id": f"product_{random.randint(1, 500)}",
+                        "quantity": random.randint(1, 3),
+                        "price": random.uniform(10, 500)
+                    }
+                    for _ in range(random.randint(1, 5))
+                ]
+            }
+            orders_data.append(order)
+        
+        # Имитация расчета статистики
+        total_revenue = sum(order["total"] for order in orders_data)
+        avg_order_value = total_revenue / len(orders_data)
+        
+        # Имитация IO операции
+        await asyncio.sleep(0.08)
+        
+        return {
+            "operation": operation_name,
+            "service": "order-service",
+            "processed_orders": len(orders_data),
+            "total_revenue": total_revenue,
+            "average_order_value": avg_order_value,
+            "profiling_enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true"
+        }

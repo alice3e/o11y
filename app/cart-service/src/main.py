@@ -15,6 +15,9 @@ from prometheus_client import Counter, Histogram
 # Импортируем модуль трейсинга
 from src.tracing import setup_tracing, get_tracer
 
+# Импортируем модуль профилирования
+from src.profiling import profile_endpoint, profile_context, get_profile_stats, list_available_profiles
+
 # Настройки
 BACKEND_URL = os.environ.get("BACKEND_URL", "http://backend:8000")
 ORDER_SERVICE_URL = os.environ.get("ORDER_SERVICE_URL", "http://order-service:8002")
@@ -207,6 +210,7 @@ async def get_cart(user_id: str = Depends(get_user_id)):
         return {"items": items, "total": total}
 
 @app.post("/cart/items", response_model=CartItem)
+@profile_endpoint("add_to_cart")
 async def add_to_cart(item: CartItemCreate, user_id: str = Depends(get_user_id)):
     with tracer.start_as_current_span("add_to_cart") as span:
         span.set_attribute("user.id", user_id)
@@ -420,3 +424,56 @@ async def get_all_carts(admin: Optional[bool] = Header(False)):
         
         span.set_attribute("carts.count", len(carts_db))
         return carts_db
+
+# Эндпоинты для управления профилированием
+@app.get("/profiling/status")
+async def get_profiling_status():
+    """Получение статуса профилирования"""
+    return {
+        "service": "cart-service",
+        "enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true",
+        "profiles_directory": "/app/profiles"
+    }
+
+@app.get("/profiling/profiles")
+async def list_profiles():
+    """Получение списка доступных профилей для cart-service"""
+    return {"profiles": list_available_profiles()}
+
+@app.get("/profiling/profiles/{filename}/stats")
+async def get_profile_stats_endpoint(filename: str):
+    """Получение статистики профиля"""
+    profile_path = f"/app/profiles/{filename}"
+    stats = get_profile_stats(profile_path)
+    return {"filename": filename, "service": "cart-service", "stats": stats}
+
+@app.post("/profiling/manual/{operation_name}")
+@profile_endpoint("manual_operation")
+async def manual_profiling_test(operation_name: str):
+    """Тестовый эндпоинт для ручного профилирования корзины"""
+    import random
+    import asyncio
+    
+    # Имитация различных операций с корзиной
+    with profile_context(f"cart_manual_{operation_name}"):
+        # Имитация работы с данными корзины
+        cart_data = {}
+        for i in range(500):
+            cart_data[f"item_{i}"] = {
+                "price": random.uniform(10, 1000),
+                "quantity": random.randint(1, 5)
+            }
+        
+        # Имитация расчета общей стоимости
+        total = sum(item["price"] * item["quantity"] for item in cart_data.values())
+        
+        # Имитация IO операции
+        await asyncio.sleep(0.05)
+        
+        return {
+            "operation": operation_name,
+            "service": "cart-service",
+            "processed_items": len(cart_data),
+            "total_value": total,
+            "profiling_enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true"
+        }

@@ -18,6 +18,9 @@ from prometheus_client import Counter
 # Импортируем модуль трейсинга
 from src.tracing import setup_tracing, get_tracer
 
+# Импортируем модуль профилирования
+from src.profiling import profile_endpoint, profile_context, get_profile_stats, list_available_profiles
+
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -217,6 +220,7 @@ async def health_check():
     return {"status": "ok", "service": "user-service"}
 
 @app.post("/users/register", response_model=User)
+@profile_endpoint("user_registration")
 async def register_user(user: UserCreate):
     """Регистрация нового пользователя"""
     with tracer.start_as_current_span("register_user") as span:
@@ -262,6 +266,7 @@ async def register_user(user: UserCreate):
         return user_in_db
 
 @app.post("/token", response_model=Token)
+@profile_endpoint("user_login")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Аутентификация пользователя и получение токена"""
     with tracer.start_as_current_span("login_for_access_token") as span:
@@ -318,6 +323,7 @@ async def update_user(
     return current_user
 
 @app.get("/users/me/profile", response_model=UserProfile)
+@profile_endpoint("get_user_profile")
 async def get_user_profile(
     current_user: UserInDB = Depends(get_current_active_user),
     cart_api: httpx.AsyncClient = Depends(get_cart_api_client),
@@ -507,3 +513,52 @@ async def get_swagger_admin_token():
         "username": "swagger_admin",
         "is_admin": True
     }
+
+# Эндпоинты для управления профилированием
+@app.get("/profiling/status")
+async def get_profiling_status():
+    """Получение статуса профилирования"""
+    return {
+        "enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true",
+        "profiles_directory": "/app/profiles"
+    }
+
+@app.get("/profiling/profiles")
+async def list_profiles():
+    """Получение списка доступных профилей"""
+    return {"profiles": list_available_profiles()}
+
+@app.get("/profiling/profiles/{filename}/stats")
+async def get_profile_stats_endpoint(filename: str):
+    """Получение статистики профиля"""
+    profile_path = f"/app/profiles/{filename}"
+    stats = get_profile_stats(profile_path)
+    return {"filename": filename, "stats": stats}
+
+@app.post("/profiling/manual/{operation_name}")
+@profile_endpoint("manual_operation")
+async def manual_profiling_test(operation_name: str):
+    """Тестовый эндпоинт для ручного профилирования"""
+    import time
+    import random
+    import asyncio
+    
+    # Имитация различных операций
+    with profile_context(f"manual_{operation_name}"):
+        # Имитация работы с данными
+        data = []
+        for i in range(1000):
+            data.append(random.random() * i)
+        
+        # Имитация сортировки
+        sorted_data = sorted(data, reverse=True)
+        
+        # Имитация IO операции
+        await asyncio.sleep(0.1)
+        
+        return {
+            "operation": operation_name,
+            "processed_items": len(data),
+            "max_value": max(sorted_data),
+            "profiling_enabled": os.environ.get("ENABLE_PROFILING", "false").lower() == "true"
+        }

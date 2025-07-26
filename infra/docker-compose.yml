@@ -75,6 +75,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -88,6 +89,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - profiling_data:/app/profiles
     networks:
       - product-store-net
 
@@ -104,6 +107,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
       - SECRET_KEY=supersecretkey123
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -117,6 +121,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - profiling_data:/app/profiles
     networks:
       - product-store-net
 
@@ -133,6 +139,7 @@ services:
       - CART_SERVICE_URL=http://cart-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -146,6 +153,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    volumes:
+      - profiling_data:/app/profiles
     networks:
       - product-store-net
 
@@ -282,10 +291,27 @@ services:
       retries: 5
       start_period: 10s
 
+  # HTTP сервер для скачивания профилей
+  profile-server:
+    image: python:3.11-slim
+    container_name: profile-server
+    volumes:
+      - profiling_data:/profiles
+    working_dir: /profiles
+    command: >
+      bash -c "echo 'Starting HTTP server for profile files...' &&
+               echo 'Available profiles:' &&
+               ls -la *.prof 2>/dev/null || echo 'No profile files yet' &&
+               python -m http.server 8080"
+    networks:
+      - product-store-net
+    restart: unless-stopped
+
 volumes:
   cassandra_data:
   prometheus_data:
   grafana_data:
+  profiling_data:
 
 networks:
   product-store-net:
