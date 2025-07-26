@@ -6,6 +6,8 @@ USER 65534
 # Копируем конфигурационный файл
 COPY alertmanager.yml /etc/alertmanager/alertmanager.yml
 
+COPY token /etc/alertmanager/token
+
 # Создаем директории для данных
 VOLUME ["/alertmanager"]
 

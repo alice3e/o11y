@@ -13,8 +13,8 @@ route:
 receivers:
   - name: 'telegram-channel'
     telegram_configs:
-      - bot_token: '${TELEGRAM_BOT_TOKEN}'
-        chat_id: '${TELEGRAM_CHANNEL_ID}'
+      - bot_token: '/etc/alertmanager/token'
+        chat_id: '-1002852417922'
         api_url: 'https://api.telegram.org'
         title: '� {{ .GroupLabels.alertname }}'
         message: |
