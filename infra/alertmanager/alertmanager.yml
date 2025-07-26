@@ -10,20 +10,17 @@ route:
   receiver: 'telegram-channel'
 
 receivers:
-  - name: 'telegram-channel'
+  - name: 'telegram-channel' # Убедитесь, что это имя совпадает с тем, что в route
     telegram_configs:
       - bot_token_file: '/etc/alertmanager/token'
         chat_id: -1002852417922
         api_url: 'https://api.telegram.org'
         parse_mode: 'HTML'
-        # 2. Устанавливаем флаг, чтобы получать уведомления о решенных проблемах
         send_resolved: true
         message: |
-          {{/* Заголовок для всей группы алертов */}}
           <b>{{ .GroupLabels.alertname }}</b>
-          {{/* Проходим по каждому алерту в группе */}}
+
           {{ range .Alerts }}
-          <hr> {{/* Горизонтальная линия для разделения алертов */}}
           <b>{{ if eq .Status "firing" }}🔥 Firing{{ else }}✅ Resolved{{ end }}</b>
           <b>Summary:</b> {{ .Annotations.summary }}
           <b>Description:</b> {{ .Annotations.description }}
