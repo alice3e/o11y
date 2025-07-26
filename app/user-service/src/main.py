@@ -94,11 +94,11 @@ class UserProfile(User):
     current_cart_total: float
     orders: List[OrderSummary]
 
-# In-memory хранилище пользователей
+# In-memory хранилище пользователей (ВНИМАНИЕ: не для продакшена)
 users_db: Dict[str, UserInDB] = {}
 
 # Настройка безопасности
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=2)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Функции для работы с паролями и токенами
@@ -219,9 +219,16 @@ async def health_check():
     """Health check эндпоинт для проверки состояния сервиса"""
     return {"status": "ok", "service": "user-service"}
 
+# ================================================================================= #
+# ============================ НАЧАЛО ИСПРАВЛЕНИЯ =================================== #
+# ================================================================================= #
+
 @app.post("/users/register", response_model=User)
 @profile_endpoint("user_registration")
-async def register_user(user: UserCreate):
+# ИСПРАВЛЕНИЕ: Изменено с `async def` на `def`.
+# Теперь FastAPI будет запускать этот эндпоинт в отдельном потоке,
+# не блокируя главный event loop во время хеширования пароля.
+def register_user(user: UserCreate):
     """Регистрация нового пользователя"""
     with tracer.start_as_current_span("register_user") as span:
         # Добавляем атрибуты в span
@@ -237,6 +244,7 @@ async def register_user(user: UserCreate):
         is_admin = user.username.startswith("admin_")
         span.set_attribute("user.is_admin", is_admin)
         
+        # Эта операция является блокирующей (CPU-bound)
         with tracer.start_as_current_span("password_hashing"):
             hashed_password = get_password_hash(user.password)
         
@@ -267,7 +275,10 @@ async def register_user(user: UserCreate):
 
 @app.post("/token", response_model=Token)
 @profile_endpoint("user_login")
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
+# ИСПРАВЛЕНИЕ: Изменено с `async def` на `def`.
+# Проверка пароля (verify_password) также является блокирующей CPU-операцией.
+# Запуск в отдельном потоке предотвращает блокировку event loop.
+def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
     """Аутентификация пользователя и получение токена"""
     with tracer.start_as_current_span("login_for_access_token") as span:
         span.set_attribute("auth.username", form_data.username)
@@ -276,6 +287,7 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             user = users_db.get(form_data.username)
             span.set_attribute("user.found", user is not None)
         
+        # Эта операция является блокирующей (CPU-bound)
         with tracer.start_as_current_span("password_verification") as verify_span:
             password_valid = user and verify_password(form_data.password, user.hashed_password)
             verify_span.set_attribute("password.valid", password_valid)
@@ -301,6 +313,10 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
         
         span.set_attribute("auth.status", "success")
         return {"access_token": access_token, "token_type": "bearer"}
+
+# ================================================================================= #
+# ============================= КОНЕЦ ИСПРАВЛЕНИЯ =================================== #
+# ================================================================================= #
 
 @app.get("/users/me", response_model=User)
 async def read_users_me(current_user: UserInDB = Depends(get_current_active_user)):

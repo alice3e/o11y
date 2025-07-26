@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime
 import logging
 from functools import wraps
+import inspect # <--- 1. Импортируем модуль inspect
 
 logger = logging.getLogger(__name__)
 
@@ -43,18 +44,34 @@ def profile_context(profile_name: str):
         logger.info(f"Profile saved to {filepath}")
 
 def profile_endpoint(endpoint_name: str):
-    """Декоратор для профилирования эндпоинтов"""
+    """
+    Декоратор для профилирования эндпоинтов, который корректно
+    работает как с синхронными (def), так и с асинхронными (async def) функциями.
+    """
     def decorator(func):
-        @wraps(func)
-        async def wrapper(*args, **kwargs):
-            if not ENABLE_PROFILING:
-                return await func(*args, **kwargs)
-            
-            with profile_context(f"endpoint_{endpoint_name}"):
-                return await func(*args, **kwargs)
-        
-        return wrapper
+        # 2. Проверяем, является ли декорируемая функция асинхронной
+        if inspect.iscoroutinefunction(func):
+            @wraps(func)
+            async def async_wrapper(*args, **kwargs):
+                # Эта ветка для 'async def' функций
+                if not ENABLE_PROFILING:
+                    return await func(*args, **kwargs)
+                
+                with profile_context(f"endpoint_{endpoint_name}"):
+                    return await func(*args, **kwargs)
+            return async_wrapper
+        else:
+            @wraps(func)
+            def sync_wrapper(*args, **kwargs):
+                # Эта ветка для обычных 'def' функций
+                if not ENABLE_PROFILING:
+                    return func(*args, **kwargs)
+                
+                with profile_context(f"endpoint_{endpoint_name}"):
+                    return func(*args, **kwargs)
+            return sync_wrapper
     return decorator
+
 
 def get_profile_stats(profile_path: str) -> str:
     """Получает текстовую статистику профиля"""
