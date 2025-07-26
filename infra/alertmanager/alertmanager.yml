@@ -1,0 +1,29 @@
+global:
+  resolve_timeout: 5m
+
+# Простая маршрутизация - все алерты в один канал
+route:
+  group_by: ['alertname']
+  group_wait: 10s
+  group_interval: 1m
+  repeat_interval: 5m
+  receiver: 'telegram-channel'
+
+# Единственный получатель - публичный Telegram канал
+receivers:
+  - name: 'telegram-channel'
+    telegram_configs:
+      - bot_token: '${TELEGRAM_BOT_TOKEN}'
+        chat_id: '${TELEGRAM_CHANNEL_ID}'
+        api_url: 'https://api.telegram.org'
+        title: '� {{ .GroupLabels.alertname }}'
+        message: |
+          {{ range .Alerts }}
+          **{{ .Annotations.summary }}**
+          
+          {{ .Annotations.description }}
+          
+          Instance: {{ .Labels.instance }}
+          Status: {{ .Status }}
+          {{ end }}
+        parse_mode: 'Markdown'

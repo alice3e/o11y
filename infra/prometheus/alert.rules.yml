@@ -1,0 +1,29 @@
+groups:
+  # Простые алерты согласно ТЗ
+  - name: performance_alerts
+    rules:
+      # 1. Время ответа p99 > 500ms для указанных эндпоинтов
+      - alert: HighResponseTime_P99
+        expr: |
+          histogram_quantile(0.99, 
+            rate(http_request_duration_seconds_bucket{
+              endpoint=~"/api/products/.*|/cart-api/cart/items|/user-api/users/me/orders"
+            }[1m])
+          ) > 0.5
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокое время ответа P99 (>500ms)"
+          description: "P99 время ответа {{ $labels.endpoint }} на {{ $labels.instance }} превысило 500ms: {{ $value }}s"
+
+      # 2. RPS в БД > 100
+      - alert: HighDatabaseRPS
+        expr: |
+          rate(database_queries_total[1m]) > 100
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Высокий RPS в базе данных (>100)"
+          description: "RPS в базе данных на {{ $labels.instance }} превысил 100: {{ $value }} запросов/сек"

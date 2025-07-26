@@ -241,11 +241,37 @@ services:
     image: prom/prometheus
     volumes:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alert.rules.yml:/etc/prometheus/alert.rules.yml
     ports:
       - 9090:9090
     networks:
       - product-store-net
     restart: unless-stopped
+
+  # Alertmanager для отправки уведомлений
+  alertmanager:
+    build:
+      context: ./alertmanager
+    container_name: alertmanager
+    ports:
+      - "9093:9093"  # Web UI и API
+      - "9094:9094"  # Cluster communication
+    volumes:
+      - alertmanager_data:/alertmanager
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_CHANNEL_ID=${TELEGRAM_CHANNEL_ID}
+    networks:
+      - product-store-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - prometheus
 
   grafana:
     image: grafana/grafana
@@ -315,6 +341,7 @@ volumes:
   prometheus_data:
   grafana_data:
   profiling_data:
+  alertmanager_data:
 
 networks:
   product-store-net:
