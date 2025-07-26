@@ -20,11 +20,10 @@ RUN curl -L ${OTEL_JAVA_AGENT_URL} -o /opt/otel/opentelemetry-javaagent.jar
 RUN echo "-javaagent:/opt/mcac/lib/datastax-mcac-agent.jar" >> /etc/cassandra/jvm-server.options
 RUN echo "-javaagent:/opt/otel/opentelemetry-javaagent.jar" >> /etc/cassandra/jvm-server.options
 
-# Добавляем JVM опции для OpenTelemetry
-RUN echo "-javaagent:/opt/otel/opentelemetry-javaagent.jar" >> /etc/cassandra/jvm-server.options
-RUN echo "-Dotel.service.name=cassandra" >> /etc/cassandra/jvm-server.options
-RUN echo "-Dotel.resource.attributes=service.name=cassandra,service.version=4.1" >> /etc/cassandra/jvm-server.options
-RUN echo "-Dotel.traces.exporter=otlp" >> /etc/cassandra/jvm-server.options
-RUN echo "-Dotel.metrics.exporter=none" >> /etc/cassandra/jvm-server.options  
-RUN echo "-Dotel.logs.exporter=none" >> /etc/cassandra/jvm-server.options
-RUN echo "-Dotel.instrumentation.cassandra.enabled=true" >> /etc/cassandra/jvm-server.options
+# Копируем скрипт entrypoint
+COPY entrypoint.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+# Используем наш кастомный entrypoint
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+CMD ["cassandra", "-f"]
