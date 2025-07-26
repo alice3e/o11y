@@ -11,11 +11,21 @@ services:
     environment:
       - CASSANDRA_BROADCAST_ADDRESS=cassandra
       - "JVM_OPTS=-Djava.rmi.server.hostname=cassandra"
+      # OpenTelemetry tracing configuration for Cassandra
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318/v1/traces
+      - OTEL_TRACES_EXPORTER=otlp
+      - OTEL_METRICS_EXPORTER=none
+      - OTEL_LOGS_EXPORTER=none
+      - OTEL_SERVICE_NAME=cassandra
+      - OTEL_RESOURCE_ATTRIBUTES=service.name=cassandra,service.version=4.1
     networks:
       - product-store-net
     volumes:
       - cassandra_data:/var/lib/cassandra
     restart: unless-stopped
+    depends_on:
+      jaeger:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "cqlsh", "-u cassandra", "-p cassandra" ,"-e", "describe keyspaces"]
       interval: 15s
@@ -184,6 +194,11 @@ services:
       context: ..
       dockerfile: app/nginx/Dockerfile
     container_name: infra-nginx
+    depends_on:
+      - backend
+      - user-service
+      - cart-service
+      - order-service
     ports:
       - "80:80"
       # - "8080:8080"

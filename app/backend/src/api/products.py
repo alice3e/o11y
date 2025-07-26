@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Query, status
 from uuid import UUID
 from ..core.models import ProductCreate, ProductOut, ProductDetailsOut, ProductUpdate, CategoryOut, PaginatedProductsResponse
 from ..auth import get_user_info, get_admin_user
+from ..tracing import get_tracer
 from cassandra.cqlengine.query import DoesNotExist
 import uuid
 import time
@@ -111,103 +112,145 @@ def list_products(
     4. 📄 Применение пагинации
     5. 📊 Расчет метаданных для навигации
     """
-    metrics_collector = get_metrics_collector()
-    start_time = time.time()
+    tracer = get_tracer()
     
-    try:
-        # Проверка контроля доступа
-        is_admin = user_info and user_info.get("is_admin", False)
+    with tracer.start_as_current_span("list_products") as span:
+        metrics_collector = get_metrics_collector()
+        start_time = time.time()
         
-        # Если пользователь не администратор, категория обязательна
-        if not is_admin and not category:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Обычные пользователи должны указать категорию товаров. Используйте параметр 'category'."
-            )
-        
-        # Валидация параметров цены
-        if min_price is not None and max_price is not None and min_price > max_price:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="min_price не может быть больше max_price"
-            )
-        
-        # Построение запроса
-        if category:
-            # Фильтрация по категории
-            query = "SELECT id, name, category, price FROM products WHERE category = %s"
-            params = [category]
-        else:
-            # Только для администраторов - все товары
-            query = "SELECT id, name, category, price FROM products"
-            params = []
-        
-        # Добавление фильтров по цене
-        price_filters = []
+        # Добавляем атрибуты запроса в span
+        span.set_attribute("query.category", category or "all")
+        span.set_attribute("query.skip", skip)
+        span.set_attribute("query.limit", limit)
+        span.set_attribute("query.sort_by", sort_by or "none")
+        span.set_attribute("query.sort_order", sort_order)
         if min_price is not None:
-            price_filters.append("price >= %s")
-            params.append(str(min_price))
+            span.set_attribute("query.min_price", min_price)
         if max_price is not None:
-            price_filters.append("price <= %s")
-            params.append(str(max_price))
+            span.set_attribute("query.max_price", max_price)
         
-        if price_filters:
+        try:
+            # Проверка контроля доступа
+            is_admin = user_info and user_info.get("is_admin", False)
+            span.set_attribute("user.is_admin", is_admin)
+            
+            # Если пользователь не администратор, категория обязательна
+            if not is_admin and not category:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Обычные пользователи должны указать категорию товаров. Используйте параметр 'category'."
+                )
+            
+            # Валидация параметров цены
+            if min_price is not None and max_price is not None and min_price > max_price:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="min_price не может быть больше max_price"
+                )
+            
+            # Построение запроса
             if category:
-                query += " AND " + " AND ".join(price_filters)
+                # Фильтрация по категории
+                query = "SELECT id, name, category, price FROM products WHERE category = %s"
+                params = [category]
             else:
-                query += " WHERE " + " AND ".join(price_filters)
-        
-        # Добавляем ALLOW FILTERING для запросов с фильтрацией
-        if category or price_filters:
-            query += " ALLOW FILTERING"
-        
-        # Выполнение запроса
-        query_start_time = time.time()
-        rows = session.execute(query, params)
-        if metrics_collector:
-            query_duration = time.time() - query_start_time
-            metrics_collector.record_db_query('select_products', query_duration)
-        
-        # Преобразование в список для сортировки и пагинации
-        products = [ProductOut(product_id=row.id, name=row.name, category=row.category, price=row.price) for row in rows]
-        
-        # Получение общего количества для метаданных пагинации
-        total_count = len(products)
-        
-        # Применение сортировки
-        if sort_by:
-            reverse = sort_order == "desc"
-            if sort_by == "name":
-                products.sort(key=lambda x: x.name, reverse=reverse)
-            elif sort_by == "price":
-                products.sort(key=lambda x: float(x.price), reverse=reverse)
-        
-        # Применение пагинации
-        paginated_products = products[skip:skip+limit]
-        
-        # Расчет метаданных пагинации
-        total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
-        
-        # Обновляем метрики продуктов при запросах
-        if metrics_collector:
-            metrics_collector.update_product_metrics()
-        
-        return {
-            "items": paginated_products,
-            "total": total_count,
-            "page": (skip // limit) + 1,
-            "pages": total_pages,
-            "has_next": skip + limit < total_count,
-            "has_prev": skip > 0
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Ошибка при получении списка товаров: {str(e)}"
-        )
+                # Только для администраторов - все товары
+                query = "SELECT id, name, category, price FROM products"
+                params = []
+            
+            # Добавление фильтров по цене
+            price_filters = []
+            if min_price is not None:
+                price_filters.append("price >= %s")
+                params.append(str(min_price))
+            if max_price is not None:
+                price_filters.append("price <= %s")
+                params.append(str(max_price))
+            
+            if price_filters:
+                if category:
+                    query += " AND " + " AND ".join(price_filters)
+                else:
+                    query += " WHERE " + " AND ".join(price_filters)
+            
+            # Добавляем ALLOW FILTERING для запросов с фильтрацией
+            if category or price_filters:
+                query += " ALLOW FILTERING"
+            
+            # Выполнение запроса
+            with tracer.start_as_current_span("database_query") as db_span:
+                db_span.set_attribute("db.operation", "select")
+                db_span.set_attribute("db.table", "products")
+                db_span.set_attribute("db.query_type", "select_products")
+                db_span.set_attribute("db.has_price_filter", len(price_filters) > 0)
+                db_span.set_attribute("db.has_category_filter", category is not None)
+                
+                query_start_time = time.time()
+                rows = session.execute(query, params)
+                
+                if metrics_collector:
+                    query_duration = time.time() - query_start_time
+                    metrics_collector.record_db_query('select_products', query_duration)
+                    db_span.set_attribute("db.duration_seconds", query_duration)
+            
+            # Преобразование в список для сортировки и пагинации
+            with tracer.start_as_current_span("process_results") as process_span:
+                products = [ProductOut(product_id=row.id, name=row.name, category=row.category, price=row.price) for row in rows]
+                process_span.set_attribute("products.raw_count", len(products))
+            
+            # Получение общего количества для метаданных пагинации
+            total_count = len(products)
+            span.set_attribute("results.total_count", total_count)
+            
+            # Применение сортировки
+            if sort_by:
+                with tracer.start_as_current_span("sort_products") as sort_span:
+                    sort_span.set_attribute("sort.field", sort_by)
+                    sort_span.set_attribute("sort.order", sort_order)
+                    
+                    reverse = sort_order == "desc"
+                    if sort_by == "name":
+                        products.sort(key=lambda x: x.name, reverse=reverse)
+                    elif sort_by == "price":
+                        products.sort(key=lambda x: float(x.price), reverse=reverse)
+            
+            # Применение пагинации
+            with tracer.start_as_current_span("paginate_products") as page_span:
+                page_span.set_attribute("pagination.skip", skip)
+                page_span.set_attribute("pagination.limit", limit)
+                
+                paginated_products = products[skip:skip+limit]
+                page_span.set_attribute("pagination.returned_count", len(paginated_products))
+                
+                # Расчет метаданных пагинации
+                total_pages = (total_count + limit - 1) // limit if total_count > 0 else 1
+                
+                span.set_attribute("results.pages_total", total_pages)
+                span.set_attribute("results.current_page", (skip // limit) + 1)
+            
+            # Обновляем метрики продуктов при запросах
+            if metrics_collector:
+                metrics_collector.update_product_metrics()
+            
+            return {
+                "items": paginated_products,
+                "total": total_count,
+                "page": (skip // limit) + 1,
+                "pages": total_pages,
+                "has_next": skip + limit < total_count,
+                "has_prev": skip > 0
+            }
+                
+        except HTTPException:
+            span.set_attribute("error", "http_exception")
+            raise
+        except Exception as e:
+            span.set_attribute("error", "unknown_exception")
+            span.set_attribute("error.message", str(e))
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Ошибка при получении списка товаров: {str(e)}"
+            )
 
 
 @router.post(
@@ -257,53 +300,90 @@ def create_product(
     admin_user=Depends(get_admin_user)
 ):
     """Создание нового товара."""
-    metrics_collector = get_metrics_collector()
+    tracer = get_tracer()
     
-    product_id = uuid.uuid4()
-    
-    query_start_time = time.time()
-    session.execute(
-        """
-        INSERT INTO products (id, name, category, price, quantity, description, manufacturer)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """,
-        (product_id, product.name, product.category, product.price, product.stock_count, product.description, product.manufacturer)
-    )
-    
-    if metrics_collector:
-        query_duration = time.time() - query_start_time
-        metrics_collector.record_db_query('insert_product', query_duration)
-        # Обновляем метрики продуктов после создания
-        metrics_collector.update_product_metrics()
-    
-    return ProductDetailsOut(product_id=product_id, **product.model_dump())
+    with tracer.start_as_current_span("create_product") as span:
+        span.set_attribute("product.name", product.name)
+        span.set_attribute("product.category", product.category)
+        span.set_attribute("product.price", float(product.price))
+        span.set_attribute("product.stock_count", product.stock_count)
+        span.set_attribute("admin.username", admin_user.username)
+        
+        metrics_collector = get_metrics_collector()
+        
+        with tracer.start_as_current_span("generate_product_id"):
+            product_id = uuid.uuid4()
+            span.set_attribute("product.id", str(product_id))
+        
+        with tracer.start_as_current_span("database_insert") as db_span:
+            db_span.set_attribute("db.operation", "insert")
+            db_span.set_attribute("db.table", "products")
+            db_span.set_attribute("db.query_type", "insert_product")
+            
+            query_start_time = time.time()
+            session.execute(
+                """
+                INSERT INTO products (id, name, category, price, quantity, description, manufacturer)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                """,
+                (product_id, product.name, product.category, product.price, product.stock_count, product.description, product.manufacturer)
+            )
+            
+            if metrics_collector:
+                query_duration = time.time() - query_start_time
+                metrics_collector.record_db_query('insert_product', query_duration)
+                db_span.set_attribute("db.duration_seconds", query_duration)
+                # Обновляем метрики продуктов после создания
+                metrics_collector.update_product_metrics()
+        
+        span.set_attribute("product.created", True)
+        return ProductDetailsOut(product_id=product_id, **product.model_dump())
 
 
 @router.get("/{product_id}", response_model=ProductDetailsOut)
 def get_product(product_id: UUID, session=Depends(get_cassandra_session)):
     """Получение товара по ID."""
-    metrics_collector = get_metrics_collector()
+    tracer = get_tracer()
     
-    query = "SELECT id, name, category, price, quantity, description, manufacturer FROM products WHERE id = %s"
-    
-    query_start_time = time.time()
-    row = session.execute(query, [product_id]).one()
-    
-    if metrics_collector:
-        query_duration = time.time() - query_start_time
-        metrics_collector.record_db_query('select_product_by_id', query_duration)
-    
-    if not row:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return ProductDetailsOut(
-        product_id=row.id,
-        name=row.name,
-        category=row.category,
-        price=row.price,
-        stock_count=row.quantity,
-        description=row.description,
-        manufacturer=row.manufacturer
-    )
+    with tracer.start_as_current_span("get_product") as span:
+        span.set_attribute("product.id", str(product_id))
+        
+        metrics_collector = get_metrics_collector()
+        
+        query = "SELECT id, name, category, price, quantity, description, manufacturer FROM products WHERE id = %s"
+        
+        with tracer.start_as_current_span("database_query") as db_span:
+            db_span.set_attribute("db.operation", "select")
+            db_span.set_attribute("db.table", "products")
+            db_span.set_attribute("db.query_type", "select_product_by_id")
+            
+            query_start_time = time.time()
+            row = session.execute(query, [product_id]).one()
+            
+            if metrics_collector:
+                query_duration = time.time() - query_start_time
+                metrics_collector.record_db_query('select_product_by_id', query_duration)
+                db_span.set_attribute("db.duration_seconds", query_duration)
+        
+        if not row:
+            span.set_attribute("product.found", False)
+            raise HTTPException(status_code=404, detail="Product not found")
+            
+        span.set_attribute("product.found", True)
+        span.set_attribute("product.name", row.name)
+        span.set_attribute("product.category", row.category)
+        span.set_attribute("product.price", float(row.price))
+        span.set_attribute("product.stock_count", row.quantity)
+        
+        return ProductDetailsOut(
+            product_id=row.id,
+            name=row.name,
+            category=row.category,
+            price=row.price,
+            stock_count=row.quantity,
+            description=row.description,
+            manufacturer=row.manufacturer
+        )
 
 
 @router.put("/{product_id}", response_model=ProductDetailsOut)

@@ -3,6 +3,7 @@ import os
 import time
 from fastapi import APIRouter, Response, status
 from cassandra.cluster import Cluster, NoHostAvailable
+from ..tracing import get_tracer
 
 # Создаем новый "роутер". Его можно воспринимать как мини-приложение FastAPI.
 router = APIRouter(
@@ -29,25 +30,51 @@ def health_check(response: Response):
     Возвращает 200 OK, если все хорошо.
     Возвращает 503 Service Unavailable, если БД недоступна.
     """
-    metrics_collector = get_metrics_collector()
+    tracer = get_tracer()
     
-    try:
-        cluster = Cluster([CASSANDRA_HOST], port=CASSANDRA_PORT)
+    with tracer.start_as_current_span("health_check") as span:
+        span.set_attribute("check.type", "database_connection")
+        span.set_attribute("db.host", CASSANDRA_HOST)
+        span.set_attribute("db.port", CASSANDRA_PORT)
         
-        query_start_time = time.time()
-        session = cluster.connect()
-        session.execute("SELECT release_version FROM system.local")
+        metrics_collector = get_metrics_collector()
         
-        if metrics_collector:
-            query_duration = time.time() - query_start_time
-            metrics_collector.record_db_query('health_check', query_duration)
-        
-        session.shutdown()
-        cluster.shutdown()
-        return {"status": "ok", "database_connection": "ok"}
-    except NoHostAvailable:
-        response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
-        return {"status": "error", "database_connection": "unavailable"}
-    except Exception as e:
-        response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
-        return {"status": "error", "database_connection": f"error: {e}"}
+        try:
+            with tracer.start_as_current_span("cassandra_connection") as db_span:
+                db_span.set_attribute("db.operation", "connect")
+                db_span.set_attribute("db.system", "cassandra")
+                
+                cluster = Cluster([CASSANDRA_HOST], port=CASSANDRA_PORT)
+                
+                query_start_time = time.time()
+                session = cluster.connect()
+                session.execute("SELECT release_version FROM system.local")
+                
+                if metrics_collector:
+                    query_duration = time.time() - query_start_time
+                    metrics_collector.record_db_query('health_check', query_duration)
+                    db_span.set_attribute("db.duration_seconds", query_duration)
+                
+                session.shutdown()
+                cluster.shutdown()
+                
+                span.set_attribute("health.status", "ok")
+                span.set_attribute("db.status", "ok")
+                return {"status": "ok", "database_connection": "ok"}
+                
+        except NoHostAvailable as e:
+            span.set_attribute("health.status", "error")
+            span.set_attribute("db.status", "unavailable")
+            span.set_attribute("error.type", "NoHostAvailable")
+            span.set_attribute("error.message", str(e))
+            
+            response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            return {"status": "error", "database_connection": "unavailable"}
+            
+        except Exception as e:
+            span.set_attribute("health.status", "error")
+            span.set_attribute("error.type", "UnexpectedError")
+            span.set_attribute("error.message", str(e))
+            
+            response.status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+            return {"status": "error", "database_connection": f"error: {e}"}

@@ -12,6 +12,9 @@ from .api import system_router, products_router
 from .services import cassandra
 from .services.metrics import setup_metrics, metrics_collector
 
+# Импортируем модуль трейсинга
+from .tracing import setup_tracing, get_tracer
+
 
 class MetricsMiddleware:
     """Middleware для автоматического сбора HTTP метрик"""
@@ -96,6 +99,10 @@ app = FastAPI(
     openapi_url="/openapi.json",
     lifespan=lifespan
 )
+
+# Инициализация OpenTelemetry трейсинга
+tracer = setup_tracing(app)
+print("Tracing initialized for Backend Service")
 
 # --- Добавляем middleware для метрик ---
 app.add_middleware(MetricsMiddleware)
