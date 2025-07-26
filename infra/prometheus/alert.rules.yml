@@ -2,7 +2,6 @@ groups:
   - name: application_latency_alerts
     rules:
       # ПРАВИЛО 1: P99 Latency для Backend API
-      # Использует метку 'endpoint' и job='backend-api'.
       - alert: BackendHighP99Latency
         expr: |
           histogram_quantile(0.99,
@@ -15,10 +14,10 @@ groups:
           severity: critical
         annotations:
           summary: "Высокая задержка P99 на Backend ({{ $labels.endpoint }})"
-          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
+          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
+          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
 
       # ПРАВИЛО 2: P99 Latency для Cart и User сервисов
-      # Использует метку 'handler' и job=~"cart-service|user-service".
       - alert: AppServicesHighP99Latency
         expr: |
           histogram_quantile(0.99,
@@ -31,10 +30,10 @@ groups:
           severity: critical
         annotations:
           summary: "Высокая задержка P99 на сервисе {{ $labels.job }}"
-          description: "P99 время ответа для обработчика {{ $labels.handler }} в сервисе {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
+          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
+          description: "P99 время ответа для обработчика {{ $labels.handler }} в сервисе {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
       
       # ПРАВИЛО 3: Общая P99 Latency для Order Service
-      # Агрегируется по всему сервису, как в вашем примере.
       - alert: OrderServiceOverallHighP99Latency
         expr: |
           histogram_quantile(0.99,
@@ -47,12 +46,12 @@ groups:
           severity: critical
         annotations:
           summary: "Высокая общая задержка P99 на Order Service"
-          description: "Общее P99 время ответа для сервиса {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf '%.3f' }}s."
+          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
+          description: "Общее P99 время ответа для сервиса {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
 
   - name: database_alerts
     rules:
       # ПРАВИЛО 4: RPS (запросы в секунду) для Cassandra
-      # Использует правильную метрику `mcac_client_request_latency_total` и суммирует по кластеру.
       - alert: CassandraHighRPS
         expr: |
           sum by (cluster) (
@@ -63,4 +62,5 @@ groups:
           severity: warning
         annotations:
           summary: "Высокий RPS в кластере Cassandra"
-          description: "Общий RPS для кластера Cassandra '{{ $labels.cluster }}' превысил 100. Текущее значение: {{ $value | printf '%.2f' }} запросов/сек."
+          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
+          description: "Общий RPS для кластера Cassandra '{{ $labels.cluster }}' превысил 100. Текущее значение: {{ $value | printf \"%.2f\" }} запросов/сек."
