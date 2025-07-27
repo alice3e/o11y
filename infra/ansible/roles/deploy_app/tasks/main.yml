@@ -1,0 +1,45 @@
+---
+- name: Create project directory on the server
+  ansible.builtin.file:
+    path: "{{ project_dest_path }}"
+    state: directory
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0755'
+
+- name: Synchronize project files to the server
+  ansible.posix.synchronize:
+    src: ../../../ # Копируем все из корневой директории проекта
+    dest: "{{ project_dest_path }}"
+    archive: yes
+    delete: yes # Удалять файлы на сервере, если их нет локально
+
+- name: Copy alertmanager token from vault
+  ansible.builtin.copy:
+    content: "{{ alertmanager_bot_token }}"
+    dest: "{{ project_dest_path }}/infra/alertmanager/token"
+    owner: "{{ ansible_user }}"
+    group: "{{ ansible_user }}"
+    mode: '0600' # Права только на чтение для владельца
+
+- name: Ensure python dependencies for docker are installed
+  ansible.builtin.pip:
+    name:
+      - docker
+      - docker-compose
+
+- name: Build custom docker images
+  community.docker.docker_image:
+    name: "{{ item.name }}:latest"
+    build:
+      path: "{{ item.path.rsplit('/', 1)[0] if 'Dockerfile' in item.path else item.path }}" # Получаем директорию
+      dockerfile: "{{ item.path.rsplit('/', 1)[-1] if 'Dockerfile' in item.path else 'Dockerfile' }}" # Получаем имя Dockerfile
+    source: build
+    state: present
+  with_items: "{{ services_to_build }}"
+
+- name: Run docker-compose to start all services
+  community.docker.docker_compose:
+    project_src: "{{ project_dest_path }}/infra" # Путь к директории с docker-compose.yml
+    state: present
+    restarted: yes # Перезапускать сервисы, если конфиг изменился
