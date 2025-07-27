@@ -18,10 +18,6 @@
     - role: common
       tags: [system, common]
     
-    - role: security
-      tags: [security]
-      when: deployment_env == 'production'
-    
     - role: docker
       tags: [docker]
     

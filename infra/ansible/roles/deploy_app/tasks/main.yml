@@ -52,18 +52,18 @@
       - docker-compose
 
 - name: Build Docker images
-  community.docker.docker_compose:
+  community.docker.docker_compose_v2:
     project_src: "{{ app_directory }}/infra"
-    build: yes
-    pull: yes
+    build: always
+    pull: always
   environment:
     DOCKER_BUILDKIT: "1"
 
 - name: Start services
-  community.docker.docker_compose:
+  community.docker.docker_compose_v2:
     project_src: "{{ app_directory }}/infra"
     state: present
-    restarted: yes
+    restart: always
 
 - name: Wait for services to be healthy
   ansible.builtin.uri:
