@@ -78,7 +78,7 @@ class ShoppingUser(HttpUser):
             except (JSONDecodeError, KeyError):
                 response.failure("Failed to parse login token from response.")
 
-    @task(10)
+    @task(30)
     def browse_products(self):
         """
         Имитирует просмотр товаров: получает список категорий, выбирает одну,
@@ -104,7 +104,7 @@ class ShoppingUser(HttpUser):
         category_name = random.choice(categories)["name"]
         
         # --- Шаг 2: Делаем первый запрос, чтобы узнать, сколько всего страниц ---
-        limit_per_page = 20
+        limit_per_page = 5
         total_pages = 1
         viewable_products = [] # Список для накопления товаров со всех просмотренных страниц
 
@@ -168,7 +168,7 @@ class ShoppingUser(HttpUser):
         # --- Шаг 5: Открываем детальную карточку товара ---
         self.client.get(f"/api/products/{product_id}", headers=self.headers, name="/api/products/[product_id]")
         
-    @task(5)
+    @task(1)
     def manage_cart(self):
         """
         Работа с корзиной: добавление, просмотр и изменение/удаление на основе
