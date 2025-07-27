@@ -11,6 +11,8 @@ nav:
   - 'Нагрузочное тестирование': 'load_testing.md'
   - 'Тестирование': 'testing.md'
   - 'Аутентификация': 'authentication.md'
+  - 'Профилирование': 'profiling.md'
+  - 'Анализ Ansible': 'ansible_analysis.md'
   - 'Планы на будущее': 'future_plans.md'
   - 'Воспроизведение алертов': 'reproduce_alerts.md'
 

@@ -1,2 +1,2 @@
 [servers]
-your_server_ip ansible_user=yc-user
+task-o11y ansible_host=51.250.7.79 ansible_user=alice3e

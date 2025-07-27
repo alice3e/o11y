@@ -1,0 +1,2 @@
+[servers]
+task-o11y ansible_host=255.255.255.255 ansible_user=user
