@@ -9,7 +9,7 @@
 
 - name: Clone or update project repository
   ansible.builtin.git:
-    repo: "{{ git_repo_url | default('https://github.com/user/microservices.git') }}"
+    repo: "{{ git_repo_url | default('https://github.com/alice3e/o11y') }}"
     dest: "{{ app_directory }}"
     version: "{{ git_branch | default('main') }}"
     force: yes
