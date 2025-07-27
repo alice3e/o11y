@@ -73,6 +73,9 @@ class MetricsCollector:
         
         Этот метод вызывается только при health check для снижения нагрузки на БД.
         Ранее вызывался при каждом добавлении/изменении/удалении товара.
+        
+        ВРЕМЕННО ОТКЛЮЧЕНО: полное сканирование таблицы products создает слишком 
+        большую нагрузку на Cassandra из-за tombstone-ячеек.
         """
         if not self.cassandra_session:
             return
@@ -80,26 +83,15 @@ class MetricsCollector:
         try:
             start_time = time.time()
             
-            # Общее количество продуктов
-            result = self.cassandra_session.execute("SELECT COUNT(*) FROM products")
-            total_count = result.one()[0]
-            products_total.set(total_count)
+            # ВРЕМЕННО ОТКЛЮЧЕНО: COUNT(*) и SELECT category сканируют всю таблицу
+            # и создают огромную нагрузку при наличии большого количества tombstone-ячеек
             
-            # Количество продуктов по категориям
-            # Поскольку GROUP BY не работает с category, получим все продукты и посчитаем вручную
-            result = self.cassandra_session.execute("SELECT category FROM products")
-            category_counts = {}
+            # Простая проверка доступности таблицы вместо полного сканирования
+            result = self.cassandra_session.execute("SELECT id FROM products LIMIT 1")
             
-            for row in result:
-                category = row.category or 'unknown'
-                category_counts[category] = category_counts.get(category, 0) + 1
-            
-            # Обнуляем старые метрики категорий
-            # (Prometheus будет автоматически убирать метрики, которые не обновляются)
-            
-            # Устанавливаем новые значения
-            for category, count in category_counts.items():
-                products_by_category.labels(category=category).set(count)
+            # Устанавливаем фиксированные значения или пропускаем обновление метрик
+            # products_total.set(0)  # Отключено
+            # products_by_category.labels(category="unknown").set(0)  # Отключено
             
             duration = time.time() - start_time
             self.record_db_query('product_metrics_update', duration)

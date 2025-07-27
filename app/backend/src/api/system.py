@@ -57,9 +57,10 @@ async def health_check(response: Response):
                     metrics_collector.record_db_query('health_check', query_duration)
                     db_span.set_attribute("db.duration_seconds", query_duration)
                     
-                    # Обновляем метрики продуктов при health check
-                    metrics_collector.update_cassandra_session(session)
-                    metrics_collector.update_product_metrics()
+                    # ВРЕМЕННО ОТКЛЮЧЕНО: обновление метрик продуктов создает слишком
+                    # большую нагрузку на Cassandra из-за полного сканирования таблицы
+                    # metrics_collector.update_cassandra_session(session)
+                    # metrics_collector.update_product_metrics()
                 
                 session.shutdown()
                 cluster.shutdown()
