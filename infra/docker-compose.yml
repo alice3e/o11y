@@ -259,9 +259,6 @@ services:
     volumes:
       - alertmanager_data:/alertmanager
       - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_CHANNEL_ID=${TELEGRAM_CHANNEL_ID}
     networks:
       - product-store-net
     restart: unless-stopped
