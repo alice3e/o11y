@@ -24,6 +24,4 @@ receivers:
           <b>{{ if eq .Status "firing" }}🔥 Firing{{ else }}✅ Resolved{{ end }}</b>
           <b>Summary:</b> {{ .Annotations.summary }}
           <b>Description:</b> {{ .Annotations.description }}
-          <b>Instance:</b> <code>{{ .Labels.instance }}</code>
-          <a href="{{ .GeneratorURL }}">Show in Prometheus</a>
           {{ end }}
