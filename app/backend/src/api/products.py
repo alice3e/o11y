@@ -182,7 +182,7 @@ def list_products(
             
             # Добавляем LIMIT для предотвращения сканирования всей таблицы
             # Для пагинации мы используем большой лимит, но не бесконечный
-            max_scan_limit = 50000  # Максимум сканируем 50к записей
+            max_scan_limit = 3000  # Максимум сканируем 50к записей
             query += f" LIMIT {max_scan_limit}"
             
             # Выполнение запроса
@@ -473,8 +473,8 @@ def list_categories(session=Depends(get_cassandra_session)):
     """Получение списка доступных категорий и количества товаров в каждой."""
     metrics_collector = get_metrics_collector()
     
-    # Get all products' categories (with limit to prevent full table scan)
-    categories_query = "SELECT category FROM products ALLOW FILTERING LIMIT 50000"
+    # Get all products' categories (with smaller limit to reduce load)
+    categories_query = "SELECT category FROM products ALLOW FILTERING LIMIT 1000"
     
     query_start_time = time.time()
     categories_rows = session.execute(categories_query)
@@ -535,7 +535,7 @@ def get_products_by_category(
     query += " ALLOW FILTERING"
     
     # Add LIMIT to prevent full table scan
-    max_scan_limit = 50000  # Maximum scan 50k records
+    max_scan_limit = 3000  # Maximum scan 50k records
     query += f" LIMIT {max_scan_limit}"
     
     # Execute the query

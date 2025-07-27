@@ -65,8 +65,16 @@ def create_schema(session):
             quantity INT,
             description TEXT,
             manufacturer TEXT
-        );
+        ) WITH gc_grace_seconds = 3600;
     """)
+    
+    # Настраиваем gc_grace_seconds для существующей таблицы
+    log.info("Configuring gc_grace_seconds for products table...")
+    try:
+        session.execute("ALTER TABLE products WITH gc_grace_seconds = 3600;")
+        log.info("gc_grace_seconds set to 1 hour (3600 seconds).")
+    except Exception as e:
+        log.warning(f"Could not alter table gc_grace_seconds: {e}")
     
     # Создаем индексы для улучшения производительности запросов
     log.info("Creating indexes for better query performance...")
