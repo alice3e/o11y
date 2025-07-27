@@ -36,7 +36,7 @@
 - **Load testing** с realistic user behavior simulation
 
 ### 🚀 DevOps & Infrastructure
-- **Infrastructure as Code** с Ansible playbooks
+- **Infrastructure as Code** с Docker Compose
 - **Automated deployment** на production серверы
 - **Container orchestration** с Docker Compose
 
@@ -243,7 +243,7 @@ curl -X POST http://localhost/user-api/register \
   -d '{"username":"testuser","email":"test@example.com","password":"testpass123"}'
 ```
 
-## 🚀 Production Deployment с Ansible
+## 🚀 Production Deployment с Docker
 
 ### 📋 Системные требования для сервера
 - **OS**: Ubuntu 20.04+ / CentOS 8+ / RHEL 8+
@@ -254,205 +254,160 @@ curl -X POST http://localhost/user-api/register \
 
 ### ⚙️ Подготовка к развертыванию
 
-#### 1. Настройка SSH ключей
+#### 1. Настройка сервера
 ```bash
-# Если у вас уже есть SSH ключ для сервера
-ls -la ~/.ssh/yandex-cloud-key*
+# Обновление системы
+sudo apt update && sudo apt upgrade -y
 
-# Проверка подключения к серверу
-ssh -i ~/.ssh/yandex-cloud-key alice3e@255.255.255.255
+# Установка Docker
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
 
-# Тест sudo прав (необходимо для Ansible)
-sudo whoami  # должно вернуть "root"
+# Установка Docker Compose
+sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+sudo chmod +x /usr/local/bin/docker-compose
+
+# Добавление пользователя в группу docker
+sudo usermod -aG docker $USER
 ```
 
-#### 2. Конфигурация Ansible inventory
+#### 2. Клонирование проекта
 ```bash
-# Редактируем файл inventory
-nano infra/ansible/inventory/hosts
+# Клонирование репозитория
+cd /opt
+sudo git clone <repository-url> microservices-app
+sudo chown -R $USER:$USER /opt/microservices-app
+cd /opt/microservices-app
 ```
 
-Обновляем содержимое:
-```ini
-[production_servers]
-prod-server-01 ansible_host=255.255.255.255 ansible_user=alice3e
-
-[all:vars]
-ansible_ssh_private_key_file=~/.ssh/yandex-cloud-key
-ansible_ssh_common_args='-o StrictHostKeyChecking=no'
-project_environment=production
-```
-
-#### 3. Настройка секретов (Ansible Vault)
+#### 3. Настройка переменных окружения
 ```bash
-# Создание vault файла с секретами
-cd infra/ansible
-ansible-vault create group_vars/all/vault.yml
+# Создание production конфигурации
+cp infra/.env.example infra/.env.production
+
+# Редактирование конфигурации
+nano infra/.env.production
 ```
 
-Добавить в vault:
-```yaml
-# Telegram Bot Token для алертов (получить у @BotFather)
-alertmanager_bot_token: "1234567890:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-
-# Telegram Chat ID для уведомлений
-telegram_chat_id: "-100123456789"
-
-# Пароли для сервисов
-grafana_admin_password: "SecureGrafanaPass123!"
-cassandra_password: "SecureCassandraPass123!"
+Обновить переменные для production:
+```env
+# Настройки для production
+ENVIRONMENT=production
 
 # JWT секретный ключ (в продакшене должен быть случайным)
-jwt_secret_key: "SuperSecretProductionJWTKey123456789"
-```
+JWT_SECRET_KEY=SuperSecretProductionJWTKey123456789
 
-#### 4. Настройка ansible.cfg
-```bash
-# Создаем конфигурацию Ansible
-cat > infra/ansible/ansible.cfg << EOF
-[defaults]
-host_key_checking = False
-inventory = inventory/hosts
-remote_user = alice3e
-private_key_file = ~/.ssh/yandex-cloud-key
-stdout_callback = yaml
-retry_files_enabled = False
-gathering = smart
-fact_caching = memory
-timeout = 30
+# Telegram Bot Token для алертов (получить у @BotFather)
+TELEGRAM_BOT_TOKEN=1234567890:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+TELEGRAM_CHAT_ID=-100123456789
 
-[ssh_connection]
-ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o UserKnownHostsFile=/dev/null
-pipelining = True
-control_path = /tmp/ansible-ssh-%%h-%%p-%%r
-EOF
+# Пароли для сервисов
+GRAFANA_ADMIN_PASSWORD=SecureGrafanaPass123!
+CASSANDRA_PASSWORD=SecureCassandraPass123!
 ```
 
 ### 🚀 Развертывание на production сервере
 
-#### 1. Проверка соединения
+#### 1. Запуск всех сервисов
 ```bash
-cd infra/ansible
-
-# Тест ping всех серверов
-ansible all -m ping --ask-vault-pass
-
-# Проверка facts
-ansible all -m setup --ask-vault-pass | grep ansible_distribution
-```
-
-#### 2. Проверка playbook (Dry Run)
-```bash
-# Syntax check
-ansible-playbook --syntax-check playbook.yml
-
-# Dry run - показывает что будет сделано без выполнения
-ansible-playbook --check playbook.yml --ask-vault-pass
-
-# Dry run с подробными логами
-ansible-playbook --check playbook.yml --ask-vault-pass -vvv
-```
-
-#### 3. Полное развертывание
-```bash
-# Полное развертывание всех компонентов
-ansible-playbook playbook.yml --ask-vault-pass
-
-# Развертывание только определенных ролей
-ansible-playbook playbook.yml --tags "common,docker" --ask-vault-pass
-
-# Только обновление приложения (без системных изменений)
-ansible-playbook playbook.yml --tags "deploy" --ask-vault-pass
-```
-
-#### 4. Мониторинг процесса развертывания
-```bash
-# В отдельном терминале - подключение к серверу для мониторинга
-ssh -i ~/.ssh/yandex-cloud-key alice3e@255.255.255.255
-
-# Мониторинг ресурсов во время развертывания
-htop
-
-# Просмотр логов Docker в реальном времени
 cd /opt/microservices-app/infra
-sudo docker-compose logs -f --tail=50
 
-# Проверка статуса контейнеров
-sudo docker-compose ps
+# Создание Docker сетей
+docker network create microservices-network || true
+
+# Запуск в production режиме
+docker-compose --env-file .env.production up -d
+
+# Проверка статуса
+docker-compose ps
+```
+
+#### 2. Проверка логов запуска
+```bash
+# Просмотр логов всех сервисов
+docker-compose logs -f --tail=50
+
+# Логи конкретного сервиса
+docker-compose logs -f backend
+docker-compose logs -f nginx
+```
+
+#### 3. Настройка Nginx для production
+```bash
+# Создание SSL сертификатов (опционально)
+sudo apt install certbot python3-certbot-nginx -y
+
+# Получение SSL сертификата
+sudo certbot --nginx -d yourdomain.com
 ```
 
 ### ✅ Проверка успешного развертывания
 
 #### 1. Health Checks
 ```bash
-# Подключение к серверу
-ssh -i ~/.ssh/yandex-cloud-key alice3e@255.255.255.255
-
-# Запуск health check скрипта
-cd /opt/microservices-app
-./scripts/health_check.sh
-
 # Проверка всех сервисов
 curl -s http://localhost/health | jq .
 curl -s http://localhost:9090/-/healthy
 curl -s http://localhost:3000/api/health
+
+# Запуск комплексной проверки
+./scripts/health_check.sh
 ```
 
 #### 2. Проверка метрик и мониторинга
 ```bash
-# Доступ к Grafana (замените IP на ваш сервер)
-# http://255.255.255.255:3000
-# Логин: admin, Пароль: из vault.yml
+# Доступ к Grafana
+# http://your-server-ip:3000
+# Логин: admin, Пароль: из .env.production
 
 # Доступ к Prometheus
-# http://255.255.255.255:9090
+# http://your-server-ip:9090
 
 # Проверка Jaeger tracing
-# http://255.255.255.255:16686
+# http://your-server-ip:16686
 ```
 
 #### 3. Функциональное тестирование
 ```bash
 # API Documentation
-# http://255.255.255.255/swagger/
+# http://your-server-ip/swagger/
 
 # Тест регистрации пользователя
-curl -X POST http://255.255.255.255/user-api/register \
+curl -X POST http://your-server-ip/user-api/register \
   -H "Content-Type: application/json" \
   -d '{"username":"produser","email":"prod@example.com","password":"prodpass123"}'
 
 # Тест получения товаров
-curl http://255.255.255.255/api/products?limit=5
+curl http://your-server-ip/api/products?limit=5
 ```
 
 ### 🔧 Управление production развертыванием
 
-#### Полезные команды на сервере
+#### Полезные команды Docker
 ```bash
 # Остановка всех сервисов
-cd /opt/microservices-app/infra
-sudo docker-compose stop
+docker-compose stop
 
 # Перезапуск сервисов
-sudo docker-compose restart
+docker-compose restart
 
 # Обновление только одного сервиса
-sudo docker-compose restart backend
+docker-compose restart backend
 
 # Просмотр логов конкретного сервиса
-sudo docker-compose logs -f backend --tail=100
+docker-compose logs -f backend --tail=100
 
 # Очистка неиспользуемых Docker ресурсов
-sudo docker system prune -f
+docker system prune -f
 
-# Backup конфигурации
-sudo tar -czf /backup/microservices-config-$(date +%Y%m%d).tar.gz /opt/microservices-app/
+# Backup данных
+sudo tar -czf /backup/microservices-data-$(date +%Y%m%d).tar.gz /opt/microservices-app/
 ```
 
 #### Мониторинг ресурсов
 ```bash
 # Использование ресурсов контейнерами
-sudo docker stats
+docker stats
 
 # Информация о дисковом пространстве
 df -h
@@ -483,77 +438,73 @@ jobs:
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
-          echo "${{ secrets.PRODUCTION_SSH_KEY }}" > ~/.ssh/yandex-cloud-key
-          chmod 600 ~/.ssh/yandex-cloud-key
+          echo "${{ secrets.PRODUCTION_SSH_KEY }}" > ~/.ssh/production-key
+          chmod 600 ~/.ssh/production-key
       
-      - name: Install Ansible
-        run: |
-          pip install ansible
-          
       - name: Deploy to production
-        env:
-          ANSIBLE_VAULT_PASSWORD: ${{ secrets.ANSIBLE_VAULT_PASSWORD }}
         run: |
-          cd infra/ansible
-          echo "$ANSIBLE_VAULT_PASSWORD" > vault_pass.txt
-          ansible-playbook playbook.yml --vault-password-file vault_pass.txt --tags "deploy"
-          rm vault_pass.txt
+          ssh -i ~/.ssh/production-key user@your-server "
+            cd /opt/microservices-app &&
+            git pull origin main &&
+            cd infra &&
+            docker-compose --env-file .env.production pull &&
+            docker-compose --env-file .env.production up -d
+          "
       
       - name: Verify deployment
         run: |
           sleep 30  # Ждем запуска сервисов
-          curl -f http://255.255.255.255/health || exit 1
+          curl -f http://your-server-ip/health || exit 1
 ```
 
 ### 🚨 Troubleshooting
 
 #### Часто встречающиеся проблемы
 
-**1. SSH Connection Issues**
+**1. Docker Service Failures**
 ```bash
-# Проверка SSH соединения
-ssh -i ~/.ssh/yandex-cloud-key alice3e@255.255.255.255 -v
+# Проверка статуса сервисов
+docker-compose ps
 
-# Если проблемы с правами на ключ
-chmod 600 ~/.ssh/yandex-cloud-key
+# Проверка логов
+docker-compose logs service-name
 
-# Если известный хост изменился
-ssh-keygen -R 255.255.255.255
+# Перезапуск проблемного сервиса
+docker-compose restart service-name
 ```
 
-**2. Ansible Permission Denied**
+**2. Network Issues**
 ```bash
-# Проверка sudo прав
-ansible all -m shell -a "sudo whoami" --ask-vault-pass
+# Проверка Docker сетей
+docker network ls
+docker network inspect microservices-network
 
-# Если sudo требует пароль, добавить в inventory:
-ansible_become_pass=your_sudo_password
-```
-
-**3. Docker Build Failures**
-```bash
-# На сервере - проверка логов build
-sudo docker-compose build --no-cache backend
-sudo docker-compose logs backend
-
-# Очистка Docker кеша
-sudo docker system prune -a -f
-```
-
-**4. Service Health Check Failures**
-```bash
 # Проверка портов
 sudo netstat -tlnp | grep -E ":(80|3000|9090|16686)"
+```
 
+**3. Storage Issues**
+```bash
+# Проверка дискового пространства
+df -h
+
+# Очистка Docker данных
+docker system prune -a -f
+docker volume prune -f
+```
+
+**4. Health Check Failures**
+```bash
 # Проверка firewall
 sudo ufw status
 sudo iptables -L
 
 # Проверка логов Nginx
-sudo docker-compose logs nginx
-```
+docker-compose logs nginx
 
-Это полная инструкция по развертыванию Product Store на production сервере с использованием Ansible! 🚀
+# Проверка подключения к базе данных
+docker-compose exec cassandra cqlsh -e "DESCRIBE KEYSPACES;"
+```
 
 ## 🧪 Тестирование API
 
@@ -621,7 +572,7 @@ locust -f infra/locust/locustfile.py --headless \
 
 ### 🛠️ DevOps и анализ
 - **[Анализ Cassandra](./app/docs-src/cassandra_analysis.md)** - обслуживание БД, tombstones
-- **[Анализ Ansible](./app/docs-src/ansible_analysis.md)** - infrastructure as code, deployment
+- **[Deployment Guide](./app/docs-src/deployment.md)** - production deployment с Docker
 - **[Планы на будущее](./app/docs-src/future_plans.md)** - roadmap и улучшения
 - **[Воспроизведение алертов](./app/docs-src/reproduce_alerts.md)** - testing мониторинга
 
@@ -637,7 +588,7 @@ locust -f infra/locust/locustfile.py --headless \
 - **Database**: Apache Cassandra 4.1 с MCAC monitoring agent
 - **Authentication**: JWT (JSON Web Tokens) с refresh mechanism
 - **Monitoring**: Prometheus, Grafana, Jaeger, OpenTelemetry, Alertmanager
-- **Infrastructure**: Docker, Docker Compose, Nginx, Ansible
+- **Infrastructure**: Docker, Docker Compose, Nginx
 - **Documentation**: MkDocs Material, Swagger/OpenAPI 3.0
 - **Testing**: pytest, pytest-asyncio, Locust, bandit, safety
 
@@ -706,7 +657,7 @@ locust -f infra/locust/locustfile.py --headless \
 - **Security Testing** automation
 
 ### 🚀 DevOps Practices
-- **Infrastructure as Code** с Ansible
+- **Infrastructure as Code** с Docker Compose
 - **Containerization** best practices
 - **Configuration Management**
 - **Deployment Automation**
