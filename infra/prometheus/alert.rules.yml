@@ -6,7 +6,9 @@ groups:
         expr: |
           histogram_quantile(0.99,
             sum by (le, endpoint) (
-              rate(http_request_duration_seconds_bucket{job="backend-api", endpoint=~"/api/products/.*"}[5m])
+              # ИСПРАВЛЕНИЕ: Убран некорректный префикс "/api/".
+              # Теперь селектор будет правильно находить метрики для эндпоинтов, начинающихся с /products/
+              rate(http_request_duration_seconds_bucket{job="backend-api", endpoint=~"/products/.*"}[5m])
             )
           ) > 0.5
         for: 1m
@@ -14,40 +16,7 @@ groups:
           severity: critical
         annotations:
           summary: "Высокая задержка P99 на Backend ({{ $labels.endpoint }})"
-          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
           description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
-
-      # ПРАВИЛО 2: P99 Latency для Cart и User сервисов
-      - alert: AppServicesHighP99Latency
-        expr: |
-          histogram_quantile(0.99,
-            sum by (le, job, handler) (
-              rate(http_request_duration_seconds_bucket{job=~"cart-service|user-service", handler=~"/cart/items|/users/me/orders"}[5m])
-            )
-          ) > 0.5
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Высокая задержка P99 на сервисе {{ $labels.job }}"
-          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
-          description: "P99 время ответа для обработчика {{ $labels.handler }} в сервисе {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
-      
-      # ПРАВИЛО 3: Общая P99 Latency для Order Service
-      - alert: OrderServiceOverallHighP99Latency
-        expr: |
-          histogram_quantile(0.99,
-            sum by (le, job) (
-              rate(http_request_duration_seconds_bucket{job="order-service"}[5m])
-            )
-          ) > 0.5
-        for: 1m
-        labels:
-          severity: critical
-        annotations:
-          summary: "Высокая общая задержка P99 на Order Service"
-          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
-          description: "Общее P99 время ответа для сервиса {{ $labels.job }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
 
   - name: database_alerts
     rules:
@@ -62,5 +31,4 @@ groups:
           severity: warning
         annotations:
           summary: "Высокий RPS в кластере Cassandra"
-          # ИСПРАВЛЕНИЕ: формат printf взят в двойные кавычки
           description: "Общий RPS для кластера Cassandra '{{ $labels.cluster }}' превысил 100. Текущее значение: {{ $value | printf \"%.2f\" }} запросов/сек."

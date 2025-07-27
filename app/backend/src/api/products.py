@@ -153,11 +153,11 @@ def list_products(
             
             # Построение запроса
             if category:
-                # Фильтрация по категории
+                # Фильтрация по категории с лимитом для избежания tombstone cells
                 query = "SELECT id, name, category, price FROM products WHERE category = %s"
                 params = [category]
             else:
-                # Только для администраторов - все товары
+                # Только для администраторов - все товары с лимитом
                 query = "SELECT id, name, category, price FROM products"
                 params = []
             
@@ -176,14 +176,14 @@ def list_products(
                 else:
                     query += " WHERE " + " AND ".join(price_filters)
             
-            # Добавляем ALLOW FILTERING для запросов с фильтрацией
-            if category or price_filters:
-                query += " ALLOW FILTERING"
-            
             # Добавляем LIMIT для предотвращения сканирования всей таблицы
             # Для пагинации мы используем разумный лимит для избежания tombstone проблем
             max_scan_limit = 1000  # Уменьшенный лимит для избежания tombstone предупреждений
             query += f" LIMIT {max_scan_limit}"
+            
+            # Добавляем ALLOW FILTERING для запросов с фильтрацией (ПОСЛЕ LIMIT!)
+            if category or price_filters:
+                query += " ALLOW FILTERING"
             
             # Выполнение запроса
             with tracer.start_as_current_span("database_query") as db_span:
@@ -525,7 +525,7 @@ def get_products_by_category(
     max_price: Optional[float] = Query(None, ge=0, description="Maximum price filter")
 ):
     """Получение списка товаров определенной категории с пагинацией, сортировкой и фильтрацией."""
-    # Start with base query
+    # Start with base query to avoid tombstone cells
     query = "SELECT id, name, category, price FROM products WHERE category = %s"
     params = [category]
     
@@ -541,12 +541,12 @@ def get_products_by_category(
     if filters:
         query += " AND " + " AND ".join(filters)
     
-    # Add ALLOW FILTERING since we're filtering on non-primary key
-    query += " ALLOW FILTERING"
-    
-    # Add LIMIT to prevent full table scan
+    # Add LIMIT to prevent full table scan (BEFORE ALLOW FILTERING)
     max_scan_limit = 1000  # Reduced limit to avoid tombstone warnings
     query += f" LIMIT {max_scan_limit}"
+    
+    # Add ALLOW FILTERING since we're filtering on non-primary key (AFTER LIMIT)
+    query += " ALLOW FILTERING"
     
     # Execute the query
     rows = session.execute(query, params)
