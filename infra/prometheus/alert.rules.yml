@@ -6,27 +6,67 @@ groups:
         expr: |
           histogram_quantile(0.99,
             sum by (le, endpoint) (
-              # ИСПРАВЛЕНИЕ: Убран некорректный префикс "/api/".
-              # Теперь селектор будет правильно находить метрики для эндпоинтов, начинающихся с /products/
               rate(http_request_duration_seconds_bucket{job="backend-api", endpoint=~"/products/.*"}[5m])
             )
           ) > 0.5
-        for: 1m
+        for: 5s
         labels:
           severity: critical
         annotations:
           summary: "Высокая задержка P99 на Backend ({{ $labels.endpoint }})"
           description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
 
+  - name: cart-service-alerts
+    rules:
+      # ПРАВИЛО 1: P99 Latency для CartService
+      - alert: CartServiceP99Latency
+        expr: |
+          histogram_quantile(0.99, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket{job="cart-service"}[5m]))) > 0.5
+        for: 5s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокая задержка P99 на CartService ({{ $labels.endpoint }})"
+          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
+
+
+  - name: user-service-alerts
+    rules:
+      # ПРАВИЛО 1: P99 Latency для CartService
+      - alert: UserServiceP99Latency
+        expr: |
+          histogram_quantile(0.99, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket{job="user-service"}[5m]))) > 0.5
+        for: 5s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокая задержка P99 на UserService ({{ $labels.endpoint }})"
+          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
+
+
+  - name: order-service-alerts
+    rules:
+      # ПРАВИЛО 1: P99 Latency для OrderService
+      - alert: OrderServiceP99Latency
+        expr: |
+          histogram_quantile(0.99, sum by (le, endpoint) (rate(http_request_duration_seconds_bucket{job="order-service"}[5m]))) > 0.5
+        for: 5s
+        labels:
+          severity: critical
+        annotations:
+          summary: "Высокая задержка P99 на OrderService ({{ $labels.endpoint }})"
+          description: "P99 время ответа для эндпоинта {{ $labels.endpoint }} превысило 500ms. Текущее значение: {{ $value | printf \"%.3f\" }}s."
+
+ 
   - name: database_alerts
     rules:
       # ПРАВИЛО 4: RPS (запросы в секунду) для Cassandra
       - alert: CassandraHighRPS
         expr: |
-          sum by (cluster) (
+          sum by (le) (
             rate(mcac_client_request_latency_total[1m])
           ) > 100
-        for: 1m
+        for: 5s
         labels:
           severity: warning
         annotations:
