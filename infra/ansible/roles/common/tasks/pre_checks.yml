@@ -19,9 +19,12 @@
       loop: [80, 443, 9090, 3000, 16686]
       ignore_errors: yes
       register: port_check
+      when: not ansible_check_mode
 
     - name: Warn about ports in use
       ansible.builtin.debug:
         msg: "Warning: Port {{ item.item }} is already in use"
-      when: item.failed == false
-      loop: "{{ port_check.results }}"
+      when: 
+        - not ansible_check_mode
+        - item.failed == false
+      loop: "{{ port_check.results | default([]) }}"

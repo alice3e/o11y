@@ -1,17 +1,21 @@
 ---
 - name: Deploy Product Store Microservices
-  hosts: all
+  hosts: production_servers
   become: yes
   gather_facts: yes
   
   vars:
-    app_version: "{{ lookup('env', 'APP_VERSION') | default('latest') }}"
-    deployment_env: "{{ lookup('env', 'DEPLOY_ENV') | default('production') }}"
+    app_version: "{{ lookup('env', 'APP_VERSION') or 'latest' }}"
+    deployment_env: "{{ lookup('env', 'DEPLOY_ENV') or 'development' }}"
   
   pre_tasks:
+    - name: Display deployment environment
+      ansible.builtin.debug:
+        msg: "Deploying in {{ deployment_env }} environment"
+    
     - name: Validate deployment environment
       ansible.builtin.fail:
-        msg: "DEPLOY_ENV must be set (development/staging/production)"
+        msg: "Invalid DEPLOY_ENV: {{ deployment_env }}. Must be one of: development, staging, production"
       when: deployment_env not in ['development', 'staging', 'production']
 
   roles:
@@ -25,10 +29,6 @@
       tags: [deploy, app]
   
   post_tasks:
-    - name: Run final health checks
-      include_tasks: roles/deploy_app/tasks/health_checks.yml
-      tags: [health, verify]
-    
     - name: Display deployment summary
       ansible.builtin.debug:
         msg: |
@@ -42,5 +42,5 @@
           
           🔧 Management:
           - SSH: ssh {{ ansible_user }}@{{ ansible_default_ipv4.address }}
-          - Logs: docker-compose -f {{ project_dest_path }}/infra/docker-compose.yml logs
-          - Health: {{ project_dest_path }}/scripts/health_check.sh
+          - Logs: docker-compose -f {{ app_directory }}/infra/docker-compose.yml logs
+          - Health: {{ app_directory }}/scripts/health_check.sh

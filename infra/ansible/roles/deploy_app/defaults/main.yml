@@ -1,0 +1,15 @@
+---
+# Default variables for deploy_app role
+app_directory: "/opt/microservices"
+local_project_path: "{{ playbook_dir }}/../../"
+deploy_from_git: false
+git_repo_url: "https://github.com/alice3e/o11y"
+git_branch: "main"
+
+# Docker settings
+compose_project_name: "microservices"
+app_environment: "development"
+debug_mode: "false"
+
+# Alerting
+alertmanager_chat_id: "-1002852417922"

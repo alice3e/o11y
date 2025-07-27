@@ -2,9 +2,9 @@
 # Application deployment settings
 app_directory: "/opt/microservices"
 local_project_path: "../../../"
-deploy_from_git: false
+deploy_from_git: true
 git_repo_url: "https://github.com/alice3e/o11y"
-git_branch: "main"
+git_branch: "master"
 
 # Docker settings
 compose_project_name: "microservices"

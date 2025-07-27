@@ -1,0 +1,5 @@
+---
+# Default variables for common role
+app_directory: "/opt/microservices"
+max_open_files: 65536
+max_processes: 32768
