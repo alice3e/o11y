@@ -286,7 +286,7 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_SERVER_ROOT_URL=http://localhost/grafana/
+      - GF_SERVER_ROOT_URL=http://51.250.7.79/grafana/
       - GF_SERVER_SERVE_FROM_SUB_PATH=true
     networks:
       - product-store-net
