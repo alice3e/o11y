@@ -98,7 +98,7 @@ class UserProfile(User):
 users_db: Dict[str, UserInDB] = {}
 
 # Настройка безопасности
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=2)
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=20)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Функции для работы с паролями и токенами
