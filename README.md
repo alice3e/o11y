@@ -21,7 +21,7 @@
 - **JWT аутентификация** с межсервисной авторизацией и RBAC
 
 ### 📊 Система мониторинга (Full Observability Stack)
-- **Prometheus** для сбора и хранения метрик (10s scrape interval)
+- **Prometheus** для сбора и хранения метрик
 - **Grafana** с 7 специализированными дашбордами
 - **Jaeger** для distributed tracing с OpenTelemetry
 - **Alertmanager** с Telegram интеграцией для критических алертов
@@ -33,20 +33,12 @@
 - **Нагрузочное тестирование** с Locust и реалистичными сценариями
 
 ### 🧪 Quality Assurance & Testing
-- **Комплексное тестирование**: Unit, Integration, Contract, E2E тесты
-- **Автоматизированный CI/CD** с GitHub Actions
-- **Code coverage** требования (80%+ threshold)
-- **Security scanning** с Bandit и Safety
-- **Performance benchmarking** с SLA мониторингом
 - **Load testing** с realistic user behavior simulation
 
 ### 🚀 DevOps & Infrastructure
 - **Infrastructure as Code** с Ansible playbooks
 - **Automated deployment** на production серверы
 - **Container orchestration** с Docker Compose
-- **Security hardening** с firewall и fail2ban
-- **Log management** с rotation и monitoring
-- **Backup strategies** для данных и конфигураций
 
 ## 🏗️ Архитектура системы
 
@@ -186,16 +178,10 @@ graph TB
 ### ⚠️ Критические алерты
 - **High P99 Latency** (>500ms) - производительность API
 - **Database High RPS** (>100 ops/sec) - нагрузка на Cassandra  
-- **High Error Rate** (>5%) - критические ошибки сервисов
-- **Service Unavailability** - недоступность микросервисов
-- **High Memory Usage** (>80%) - проблемы с ресурсами
-- **Failed Authentication Rate** (>10/min) - security incidents
 
 ### 📱 Telegram Integration
 - **Alertmanager** с Telegram bot integration
 - **Группировка алертов** для предотвращения спама
-- **Escalation rules** с различными уровнями критичности
-- **Rich formatting** с links to Grafana dashboards
 
 ## 🎯 Быстрый старт (Local Development)
 
@@ -673,47 +659,6 @@ locust -f infra/locust/locustfile.py --headless \
 - **Network**: 1Gbps, низкая latency
 - **OS**: Ubuntu 20.04+, CentOS 8+, RHEL 8+
 
-## 🚀 Производственная готовность
-
-### ✅ Что уже реализовано (Production-Ready)
-- ✅ **Микросервисная архитектура** с proper service boundaries
-- ✅ **Контейнеризация** всех компонентов с health checks
-- ✅ **Full Observability Stack** (Prometheus + Grafana + Jaeger + Alertmanager)
-- ✅ **Health checks** и graceful shutdown для всех сервисов
-- ✅ **JWT аутентификация** с RBAC и security best practices
-- ✅ **Автоматическая API документация** с OpenAPI/Swagger
-- ✅ **Comprehensive testing** (Unit + Integration + E2E + Load testing)
-- ✅ **Performance profiling** с cProfile и production monitoring
-- ✅ **Infrastructure as Code** с Ansible playbooks
-- ✅ **Production deployment** procedures и troubleshooting guides
-- ✅ **Security hardening** с rate limiting, firewall rules, security headers
-- ✅ **Database optimization** с Cassandra tuning и monitoring
-
-### 🔄 В активной разработке
-- 🔄 **CI/CD pipeline** с automated testing и deployment
-- 🔄 **Kubernetes manifests** для cloud-native deployment
-- 🔄 **Log aggregation** с ELK Stack или Loki
-- 🔄 **Advanced security** с OAuth2, API keys, encryption at rest
-- 🔄 **Backup strategies** для данных и конфигураций
-- 🔄 **Multi-environment** support (dev/staging/prod)
-
-### 🎯 Roadmap (планы на будущее)
-- 🎯 **Service mesh** с Istio для advanced traffic management
-- 🎯 **Event-driven architecture** с Apache Kafka или RabbitMQ
-- 🎯 **Caching layer** с Redis для performance optimization
-- 🎯 **Content Delivery Network** для static assets
-- 🎯 **Advanced analytics** с machine learning insights
-- 🎯 **Mobile API** с GraphQL support
-- 🎯 **Real-time notifications** с WebSocket или Server-Sent Events
-
-### 📊 Quality Metrics
-- **Code Coverage**: 80%+ для всех сервисов
-- **API Response Time**: P95 < 200ms
-- **System Uptime**: 99.9% availability target
-- **Error Rate**: < 0.1% в production
-- **Security Scan**: Zero high/critical vulnerabilities
-- **Documentation Coverage**: 100% для всех endpoints
-
 ---
 
 ## 🎓 Образовательная ценность
@@ -750,7 +695,3 @@ locust -f infra/locust/locustfile.py --headless \
 - **Containerization** best practices
 - **Configuration Management**
 - **Deployment Automation**
-
----
-
-*Проект создан для демонстрации enterprise-ready подходов к разработке микросервисных приложений с полноценной системой мониторинга, безопасности и автоматизации развертывания.*

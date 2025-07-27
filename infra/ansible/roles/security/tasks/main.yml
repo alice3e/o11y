@@ -1,0 +1,70 @@
+---
+- name: Install security packages
+  ansible.builtin.package:
+    name:
+      - ufw
+      - fail2ban
+      - unattended-upgrades
+    state: present
+
+- name: Configure firewall rules
+  ansible.builtin.ufw:
+    rule: allow
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 22     # SSH
+    - 80     # HTTP
+    - 443    # HTTPS
+    - 9090   # Prometheus
+    - 3000   # Grafana
+    - 16686  # Jaeger
+
+- name: Block direct access to application ports
+  ansible.builtin.ufw:
+    rule: deny
+    port: "{{ item }}"
+    proto: tcp
+  loop:
+    - 8000   # Backend (через Nginx)
+    - 8001   # Cart (через Nginx)
+    - 8002   # Order (через Nginx)
+    - 8003   # User (через Nginx)
+
+- name: Enable UFW
+  ansible.builtin.ufw:
+    state: enabled
+
+- name: Configure fail2ban for SSH
+  ansible.builtin.copy:
+    content: |
+      [sshd]
+      enabled = true
+      port = 22
+      filter = sshd
+      logpath = /var/log/auth.log
+      maxretry = 3
+      bantime = 3600
+    dest: /etc/fail2ban/jail.local
+  notify: restart_fail2ban
+
+- name: Set up log rotation for Docker
+  ansible.builtin.copy:
+    content: |
+      /var/lib/docker/containers/*/*.log {
+        rotate 7
+        daily
+        compress
+        missingok
+        delaycompress
+        copytruncate
+      }
+    dest: /etc/logrotate.d/docker
+
+- name: Configure automatic security updates
+  ansible.builtin.copy:
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      APT::Periodic::AutocleanInterval "7";
+    dest: /etc/apt/apt.conf.d/20auto-upgrades

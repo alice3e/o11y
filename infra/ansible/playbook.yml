@@ -1,7 +1,50 @@
 ---
-- hosts: all
-  become: yes # Выполнять задачи с правами sudo
+- name: Deploy Product Store Microservices
+  hosts: all
+  become: yes
+  gather_facts: yes
+  
+  vars:
+    app_version: "{{ lookup('env', 'APP_VERSION') | default('latest') }}"
+    deployment_env: "{{ lookup('env', 'DEPLOY_ENV') | default('production') }}"
+  
+  pre_tasks:
+    - name: Validate deployment environment
+      ansible.builtin.fail:
+        msg: "DEPLOY_ENV must be set (development/staging/production)"
+      when: deployment_env not in ['development', 'staging', 'production']
+
   roles:
-    - common
-    - docker
-    - deploy_app
+    - role: common
+      tags: [system, common]
+    
+    - role: security
+      tags: [security]
+      when: deployment_env == 'production'
+    
+    - role: docker
+      tags: [docker]
+    
+    - role: deploy_app
+      tags: [deploy, app]
+  
+  post_tasks:
+    - name: Run final health checks
+      include_tasks: roles/deploy_app/tasks/health_checks.yml
+      tags: [health, verify]
+    
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg: |
+          🎉 Deployment completed successfully!
+          
+          📊 Access URLs:
+          - Application: http://{{ ansible_default_ipv4.address }}
+          - Prometheus: http://{{ ansible_default_ipv4.address }}:9090
+          - Grafana: http://{{ ansible_default_ipv4.address }}:3000
+          - Jaeger: http://{{ ansible_default_ipv4.address }}:16686
+          
+          🔧 Management:
+          - SSH: ssh {{ ansible_user }}@{{ ansible_default_ipv4.address }}
+          - Logs: docker-compose -f {{ project_dest_path }}/infra/docker-compose.yml logs
+          - Health: {{ project_dest_path }}/scripts/health_check.sh

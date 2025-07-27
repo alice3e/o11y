@@ -1,0 +1,27 @@
+---
+- name: Check system requirements
+  block:
+    - name: Verify minimum RAM
+      ansible.builtin.fail:
+        msg: "Insufficient RAM. Required: 4GB, Available: {{ ansible_memtotal_mb }}MB"
+      when: ansible_memtotal_mb < 4096
+
+    - name: Verify disk space
+      ansible.builtin.fail:
+        msg: "Insufficient disk space in /opt"
+      when: ansible_mounts | selectattr('mount', 'equalto', '/') | map(attribute='size_available') | first < 10737418240  # 10GB
+
+    - name: Check if critical ports are available
+      ansible.builtin.wait_for:
+        port: "{{ item }}"
+        state: stopped
+        timeout: 5
+      loop: [80, 443, 9090, 3000, 16686]
+      ignore_errors: yes
+      register: port_check
+
+    - name: Warn about ports in use
+      ansible.builtin.debug:
+        msg: "Warning: Port {{ item.item }} is already in use"
+      when: item.failed == false
+      loop: "{{ port_check.results }}"

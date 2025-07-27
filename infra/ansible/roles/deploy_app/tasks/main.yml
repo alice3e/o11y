@@ -1,26 +1,49 @@
 ---
-- name: Create project directory on the server
+- name: Ensure project directory exists
   ansible.builtin.file:
-    path: "{{ project_dest_path }}"
+    path: "{{ app_directory }}"
     state: directory
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
     mode: '0755'
 
-- name: Synchronize project files to the server
+- name: Clone or update project repository
+  ansible.builtin.git:
+    repo: "{{ git_repo_url | default('https://github.com/user/microservices.git') }}"
+    dest: "{{ app_directory }}"
+    version: "{{ git_branch | default('main') }}"
+    force: yes
+  when: deploy_from_git | default(false)
+
+- name: Copy project files (when not using git)
   ansible.posix.synchronize:
-    src: ../../../ # Копируем все из корневой директории проекта
-    dest: "{{ project_dest_path }}"
-    archive: yes
-    delete: yes # Удалять файлы на сервере, если их нет локально
+    src: "{{ local_project_path | default('../../../') }}/"
+    dest: "{{ app_directory }}/"
+    delete: yes
+    recursive: yes
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.env"
+      - "--exclude=venv"
+      - "--exclude=node_modules"
+  when: not (deploy_from_git | default(false))
 
 - name: Copy alertmanager token from vault
   ansible.builtin.copy:
     content: "{{ alertmanager_bot_token }}"
-    dest: "{{ project_dest_path }}/infra/alertmanager/token"
+    dest: "{{ app_directory }}/infra/alertmanager/token"
     owner: "{{ ansible_user }}"
     group: "{{ ansible_user }}"
-    mode: '0600' # Права только на чтение для владельца
+    mode: '0600'
+
+- name: Create environment file
+  ansible.builtin.template:
+    src: docker.env.j2
+    dest: "{{ app_directory }}/.env"
+    mode: '0600'
+  when: docker_env_template is defined
 
 - name: Ensure python dependencies for docker are installed
   ansible.builtin.pip:
@@ -28,18 +51,33 @@
       - docker
       - docker-compose
 
-- name: Build custom docker images
-  community.docker.docker_image:
-    name: "{{ item.name }}:latest"
-    build:
-      path: "{{ item.path.rsplit('/', 1)[0] if 'Dockerfile' in item.path else item.path }}" # Получаем директорию
-      dockerfile: "{{ item.path.rsplit('/', 1)[-1] if 'Dockerfile' in item.path else 'Dockerfile' }}" # Получаем имя Dockerfile
-    source: build
-    state: present
-  with_items: "{{ services_to_build }}"
-
-- name: Run docker-compose to start all services
+- name: Build Docker images
   community.docker.docker_compose:
-    project_src: "{{ project_dest_path }}/infra" # Путь к директории с docker-compose.yml
+    project_src: "{{ app_directory }}/infra"
+    build: yes
+    pull: yes
+  environment:
+    DOCKER_BUILDKIT: "1"
+
+- name: Start services
+  community.docker.docker_compose:
+    project_src: "{{ app_directory }}/infra"
     state: present
-    restarted: yes # Перезапускать сервисы, если конфиг изменился
+    restarted: yes
+
+- name: Wait for services to be healthy
+  ansible.builtin.uri:
+    url: "http://localhost:{{ item.port }}/{{ item.path }}"
+    method: GET
+    status_code: 200
+  register: health_check
+  until: health_check.status == 200
+  retries: 30
+  delay: 10
+  loop:
+    - { port: 80, path: 'health' }
+    - { port: 8000, path: 'health' }
+    - { port: 8001, path: 'health' }
+    - { port: 8002, path: 'health' }
+    - { port: 8003, path: 'health' }
+  ignore_errors: yes
