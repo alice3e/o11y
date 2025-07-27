@@ -181,8 +181,8 @@ def list_products(
                 query += " ALLOW FILTERING"
             
             # Добавляем LIMIT для предотвращения сканирования всей таблицы
-            # Для пагинации мы используем большой лимит, но не бесконечный
-            max_scan_limit = 3000  # Максимум сканируем 50к записей
+            # Для пагинации мы используем разумный лимит для избежания tombstone проблем
+            max_scan_limit = 1000  # Уменьшенный лимит для избежания tombstone предупреждений
             query += f" LIMIT {max_scan_limit}"
             
             # Выполнение запроса
@@ -473,32 +473,42 @@ def list_categories(session=Depends(get_cassandra_session)):
     """Получение списка доступных категорий и количества товаров в каждой."""
     metrics_collector = get_metrics_collector()
     
-    # Get all products' categories (with smaller limit to reduce load)
-    categories_query = "SELECT category FROM products ALLOW FILTERING LIMIT 1000"
+    # Используем предопределенный список категорий для избежания тяжелых запросов
+    # В production это можно кешировать или хранить в отдельной таблице
+    predefined_categories = [
+        "Молочные продукты", "Фрукты", "Напитки", "Пельмени", "Бакалея",
+        "Сладкое", "Сигареты", "Мясо", "Овощи", "Средства для уборки", "Алкоголь"
+    ]
     
-    query_start_time = time.time()
-    categories_rows = session.execute(categories_query)
-    
-    if metrics_collector:
-        query_duration = time.time() - query_start_time
-        metrics_collector.record_db_query('select_categories', query_duration)
-    
-    # Use a dictionary to track unique categories and counts
-    category_counts = {}
-    for row in categories_rows:
-        category = row.category
-        if category in category_counts:
-            category_counts[category] += 1
-        else:
-            category_counts[category] = 1
-    
-    # Convert to result format
     result = []
-    for category, count in category_counts.items():
-        result.append(CategoryOut(
-            name=category,
-            product_count=count
-        ))
+    
+    # Для каждой категории получаем приблизительное количество товаров
+    for category in predefined_categories:
+        query_start_time = time.time()
+        
+        # Быстрый запрос для подсчета товаров в категории (с использованием индекса)
+        count_query = "SELECT COUNT(*) FROM products WHERE category = %s"
+        
+        try:
+            count_result = session.execute(count_query, [category])
+            count = count_result.one()[0] if count_result else 0
+            
+            if metrics_collector:
+                query_duration = time.time() - query_start_time
+                metrics_collector.record_db_query('count_category', query_duration)
+            
+            if count > 0:  # Добавляем только категории с товарами
+                result.append(CategoryOut(
+                    name=category,
+                    product_count=count
+                ))
+                
+        except Exception as e:
+            # В случае ошибки добавляем категорию с нулевым счетчиком
+            result.append(CategoryOut(
+                name=category,
+                product_count=0
+            ))
     
     return result
 
@@ -535,7 +545,7 @@ def get_products_by_category(
     query += " ALLOW FILTERING"
     
     # Add LIMIT to prevent full table scan
-    max_scan_limit = 3000  # Maximum scan 50k records
+    max_scan_limit = 1000  # Reduced limit to avoid tombstone warnings
     query += f" LIMIT {max_scan_limit}"
     
     # Execute the query

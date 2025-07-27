@@ -36,11 +36,16 @@ log "✅ Cassandra container is running"
 
 # 1. Настройка gc_grace_seconds для таблицы products
 log "🔧 Setting gc_grace_seconds for products table..."
-docker-compose -f infra/docker-compose.yml exec cassandra cqlsh -e "
-USE store;
-ALTER TABLE products WITH gc_grace_seconds = 3600;
-DESCRIBE TABLE products;
-" || warn "Could not set gc_grace_seconds (table may not exist yet)"
+docker-compose -f infra/docker-compose.yml exec cassandra cqlsh -e "USE store; ALTER TABLE products WITH gc_grace_seconds = 3600;" || warn "Could not set gc_grace_seconds (table may not exist yet)"
+
+# 1.1. Создание индексов если их нет
+log "📊 Creating indexes for better performance..."
+docker-compose -f infra/docker-compose.yml exec cassandra cqlsh -e "USE store; CREATE INDEX IF NOT EXISTS products_category_idx ON products (category);" || warn "Could not create category index"
+docker-compose -f infra/docker-compose.yml exec cassandra cqlsh -e "USE store; CREATE INDEX IF NOT EXISTS products_price_idx ON products (price);" || warn "Could not create price index"
+
+# 1.2. Показать описание таблицы
+log "📋 Current table configuration:"
+docker-compose -f infra/docker-compose.yml exec cassandra cqlsh -e "USE store; DESCRIBE TABLE products;" || warn "Could not describe table"
 
 # 2. Выполнение компактификации
 log "🗜️  Starting compaction for store.products table..."
@@ -52,7 +57,7 @@ docker-compose -f infra/docker-compose.yml exec cassandra nodetool compactionsta
 
 # 4. Очистка снапшотов (опционально)
 log "🧹 Cleaning up old snapshots..."
-docker-compose -f infra/docker-compose.yml exec cassandra nodetool clearsnapshot store || warn "Could not clean snapshots"
+docker-compose -f infra/docker-compose.yml exec cassandra nodetool clearsnapshot --all || warn "Could not clean snapshots"
 
 # 5. Информация о состоянии таблицы
 log "📋 Table information:"
