@@ -46,7 +46,7 @@ services:
     environment:
       - CASSANDRA_HOST=cassandra
       - SECRET_KEY=supersecretkey123
-      - ENABLE_PROFILING=false
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -78,7 +78,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
-      - ENABLE_PROFILING=false
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -110,7 +110,7 @@ services:
       - BACKEND_URL=http://backend:8000
       - USER_SERVICE_URL=http://user-service:8003
       - SECRET_KEY=supersecretkey123
-      - ENABLE_PROFILING=false
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831
@@ -142,7 +142,7 @@ services:
       - CART_SERVICE_URL=http://cart-service:8001
       - ORDER_SERVICE_URL=http://order-service:8002
       - SECRET_KEY=supersecretkey123
-      - ENABLE_PROFILING=false
+      - ENABLE_PROFILING=true
       # Jaeger tracing configuration
       - JAEGER_AGENT_HOST=jaeger
       - JAEGER_AGENT_PORT=6831

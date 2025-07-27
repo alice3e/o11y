@@ -123,6 +123,21 @@ graph TB
     
     %% Testing
     LOCUST --> NGINX
+    
+    %% Styling
+    classDef clientBox fill:#e3f2fd,stroke:#1976d2,stroke-width:2px
+    classDef gatewayBox fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    classDef serviceBox fill:#fff3e0,stroke:#f57c00,stroke-width:2px
+    classDef dataBox fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef observabilityBox fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef testingBox fill:#f1f8e9,stroke:#689f38,stroke-width:2px
+    
+    class WEB,MOBILE,API_CLIENT clientBox
+    class NGINX gatewayBox
+    class BACKEND,CART,ORDER,USER serviceBox
+    class CASSANDRA,MEMORY_STORAGE dataBox
+    class PROMETHEUS,GRAFANA,JAEGER,ALERTMGR observabilityBox
+    class LOCUST,SWAGGER,MKDOCS testingBox
 ```
 
 ### 🔧 Микросервисы

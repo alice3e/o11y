@@ -83,7 +83,10 @@ graph TB
     PROMETHEUS --> GRAFANA
     PROMETHEUS --> ALERTMANAGER
     
-    ALL_SERVICES -.->|Traces| JAEGER
+    BACKEND -.->|Traces| JAEGER
+    CART -.->|Traces| JAEGER
+    ORDER -.->|Traces| JAEGER
+    USER -.->|Traces| JAEGER
 ```
 
 ### Основные сервисы

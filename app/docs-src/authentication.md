@@ -25,7 +25,7 @@ graph TB
     
     subgraph "🎭 Role-Based Access"
         ADMIN[👑 Admin Role<br/>Full Access]
-        USER[👤 User Role<br/>Limited Access]
+        USER_ROLE[👤 User Role<br/>Limited Access]
         GUEST[👻 Guest Access<br/>Read Only]
     end
     
@@ -48,16 +48,16 @@ graph TB
     
     %% Authorization flow
     JWT_MIDDLEWARE --> ADMIN
-    JWT_MIDDLEWARE --> USER
+    JWT_MIDDLEWARE --> USER_ROLE
     JWT_MIDDLEWARE --> GUEST
     
     ADMIN --> BACKEND
     ADMIN --> CART
     ADMIN --> ORDER
     
-    USER --> CART
-    USER --> ORDER
-    USER --> BACKEND
+    USER_ROLE --> CART
+    USER_ROLE --> ORDER
+    USER_ROLE --> BACKEND
     
     GUEST --> BACKEND
     
@@ -69,7 +69,7 @@ graph TB
     
     class WEB,MOBILE,API_CLIENT clientBox
     class NGINX,JWT_MIDDLEWARE,AUTH,JWT_SERVICE authBox
-    class ADMIN,USER,GUEST roleBox
+    class ADMIN,USER_ROLE,GUEST roleBox
     class BACKEND,CART,ORDER serviceBox
 ```
 

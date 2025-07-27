@@ -28,6 +28,15 @@ graph TB
     
     UNIT --> COVERAGE
     INTEGRATION --> CONTRACT
+    CONTRACT --> E2E
+    E2E --> CI
+    CI --> STAGING
+    STAGING --> PROD
+    
+    COVERAGE --> LINT
+    LINT --> SECURITY
+    SECURITY --> PERFORMANCE
+```
     E2E --> PERFORMANCE
     
     COVERAGE --> CI

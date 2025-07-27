@@ -60,6 +60,18 @@ graph TB
     PROM --> ALERTMGR
     PROM --> GRAFANA
 ```
+    CART --> JAEGER
+    ORDER --> JAEGER
+    USER --> JAEGER
+    
+    BACKEND --> PROM
+    CART --> PROM
+    ORDER --> PROM
+    USER --> PROM
+    
+    PROM --> ALERTMGR
+    PROM --> GRAFANA
+```
 
 ---
 
