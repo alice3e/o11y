@@ -19,8 +19,8 @@ cassandra_hosts: "cassandra:9042"
 prometheus_url: "http://prometheus:9090"
 grafana_admin_password: "{{ vault_grafana_password | default('admin') }}"
 
-# Alerting (required variables)
-alertmanager_bot_token: "{{ vault_alertmanager_bot_token }}"
+# Alerting (optional variables for testing)
+alertmanager_bot_token: "{{ vault_alertmanager_bot_token | default('test-token') }}"
 alertmanager_chat_id: "-1002852417922"
 
 # Service URLs
