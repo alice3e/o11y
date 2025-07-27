@@ -231,10 +231,6 @@ def list_products(
                 span.set_attribute("results.pages_total", total_pages)
                 span.set_attribute("results.current_page", (skip // limit) + 1)
             
-            # Обновляем метрики продуктов при запросах
-            if metrics_collector:
-                metrics_collector.update_product_metrics()
-            
             return {
                 "items": paginated_products,
                 "total": total_count,
@@ -337,8 +333,6 @@ def create_product(
                 query_duration = time.time() - query_start_time
                 metrics_collector.record_db_query('insert_product', query_duration)
                 db_span.set_attribute("db.duration_seconds", query_duration)
-                # Обновляем метрики продуктов после создания
-                metrics_collector.update_product_metrics()
         
         span.set_attribute("product.created", True)
         return ProductDetailsOut(product_id=product_id, **product.model_dump())
@@ -447,8 +441,6 @@ def update_product(product_id: UUID, product_update: ProductUpdate, session=Depe
     if metrics_collector:
         query_duration = time.time() - query_start_time
         metrics_collector.record_db_query('update_product', query_duration)
-        # Обновляем метрики продуктов после изменения
-        metrics_collector.update_product_metrics()
     
     return current_product
 
@@ -466,8 +458,6 @@ def delete_product(product_id: UUID, session=Depends(get_cassandra_session)):
     if metrics_collector:
         query_duration = time.time() - query_start_time
         metrics_collector.record_db_query('delete_product', query_duration)
-        # Обновляем метрики продуктов после удаления
-        metrics_collector.update_product_metrics()
     
     return
 

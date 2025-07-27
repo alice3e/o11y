@@ -56,6 +56,10 @@ async def health_check(response: Response):
                     query_duration = time.time() - query_start_time
                     metrics_collector.record_db_query('health_check', query_duration)
                     db_span.set_attribute("db.duration_seconds", query_duration)
+                    
+                    # Обновляем метрики продуктов при health check
+                    metrics_collector.update_cassandra_session(session)
+                    metrics_collector.update_product_metrics()
                 
                 session.shutdown()
                 cluster.shutdown()

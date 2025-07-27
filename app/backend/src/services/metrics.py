@@ -69,7 +69,11 @@ class MetricsCollector:
         db_query_duration.labels(operation=operation).observe(duration)
     
     def update_product_metrics(self):
-        """Обновить метрики продуктов"""
+        """Обновить метрики продуктов
+        
+        Этот метод вызывается только при health check для снижения нагрузки на БД.
+        Ранее вызывался при каждом добавлении/изменении/удалении товара.
+        """
         if not self.cassandra_session:
             return
             

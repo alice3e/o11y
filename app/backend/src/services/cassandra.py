@@ -95,8 +95,6 @@ def init_cassandra():
             # Обновляем сессию в сборщике метрик
             if metrics_collector:
                 metrics_collector.update_cassandra_session(session)
-                # Обновляем метрики продуктов при инициализации
-                metrics_collector.update_product_metrics()
             
             return session
         except Exception as e:
