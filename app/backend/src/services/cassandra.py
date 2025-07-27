@@ -68,6 +68,15 @@ def create_schema(session):
         );
     """)
     
+    # Создаем индексы для улучшения производительности запросов
+    log.info("Creating indexes for better query performance...")
+    try:
+        session.execute("CREATE INDEX IF NOT EXISTS products_category_idx ON products (category);")
+        session.execute("CREATE INDEX IF NOT EXISTS products_price_idx ON products (price);")
+        log.info("Indexes created successfully.")
+    except Exception as e:
+        log.warning(f"Could not create indexes (they may already exist): {e}")
+    
     # Записываем метрики для этой операции
     if metrics_collector:
         duration = time.time() - start_time

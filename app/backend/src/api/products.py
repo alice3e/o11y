@@ -180,6 +180,11 @@ def list_products(
             if category or price_filters:
                 query += " ALLOW FILTERING"
             
+            # Добавляем LIMIT для предотвращения сканирования всей таблицы
+            # Для пагинации мы используем большой лимит, но не бесконечный
+            max_scan_limit = 50000  # Максимум сканируем 50к записей
+            query += f" LIMIT {max_scan_limit}"
+            
             # Выполнение запроса
             with tracer.start_as_current_span("database_query") as db_span:
                 db_span.set_attribute("db.operation", "select")
@@ -468,8 +473,8 @@ def list_categories(session=Depends(get_cassandra_session)):
     """Получение списка доступных категорий и количества товаров в каждой."""
     metrics_collector = get_metrics_collector()
     
-    # Get all products' categories
-    categories_query = "SELECT category FROM products ALLOW FILTERING"
+    # Get all products' categories (with limit to prevent full table scan)
+    categories_query = "SELECT category FROM products ALLOW FILTERING LIMIT 50000"
     
     query_start_time = time.time()
     categories_rows = session.execute(categories_query)
@@ -518,16 +523,20 @@ def get_products_by_category(
     filters = []
     if min_price is not None:
         filters.append("price >= %s")
-        params.append(Decimal(str(min_price)))
+        params.append(str(min_price))
     if max_price is not None:
         filters.append("price <= %s")
-        params.append(Decimal(str(max_price)))
+        params.append(str(max_price))
     
     if filters:
         query += " AND " + " AND ".join(filters)
     
     # Add ALLOW FILTERING since we're filtering on non-primary key
     query += " ALLOW FILTERING"
+    
+    # Add LIMIT to prevent full table scan
+    max_scan_limit = 50000  # Maximum scan 50k records
+    query += f" LIMIT {max_scan_limit}"
     
     # Execute the query
     rows = session.execute(query, params)
@@ -540,7 +549,7 @@ def get_products_by_category(
     
     # Apply sorting
     if sort_by:
-        reverse = sort_order.lower() == "desc"
+        reverse = (sort_order or "asc").lower() == "desc"
         if sort_by == "name":
             products.sort(key=lambda x: x.name, reverse=reverse)
         elif sort_by == "price":
